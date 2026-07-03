@@ -26,14 +26,9 @@ function makeAuth(creds) {
 function ser(c) { return JSON.stringify(c, BufferJSON.replacer); }
 function deser(s) { return JSON.parse(s, BufferJSON.reviver); }
 
-// Keepalive ping every 20s to prevent cloud platform timeout
 function startKeepalive(sock) {
     const iv = setInterval(() => {
-        try {
-            if (sock.ws && sock.ws.readyState === 1) {
-                sock.ws.ping();
-            }
-        } catch (e) {}
+        try { if (sock.ws && sock.ws.readyState === 1) sock.ws.ping(); } catch (e) {}
     }, 20000);
     return iv;
 }
@@ -46,19 +41,15 @@ app.post('/api/link', async (req, res) => {
         const { version } = await fetchLatestBaileysVersion();
 
         const sock = makeWASocket({
-            version,
-            auth: auth.state,
-            printQRInTerminal: false,
+            version, auth: auth.state, printQRInTerminal: false,
             logger: pino({ level: 'silent' }),
             shouldSyncHistoryMessage: () => false,
-            connectTimeoutMs: 60000,
-            keepAliveIntervalMs: 15000,
-            retryRequestDelayMs: 2000,
-            maxMsgRetryCount: 5,
+            connectTimeoutMs: 60000, keepAliveIntervalMs: 15000,
+            retryRequestDelayMs: 2000, maxMsgRetryCount: 5,
         });
 
         const keepalive = startKeepalive(sock);
-        const sess = { id, phone: phone || '', sock, qr: null, code: null, status: 'connecting', creds: null, error: null, keepalive };
+        const sess = { id, phone: phone || '', sock, qr: null, code: null, status: 'connecting', creds: null, error: null, keepalive, done: false };
         sessions.set(id, sess);
 
         sock.ev.on('creds.update', () => { sess.creds = ser(auth.state.creds); });
@@ -66,46 +57,25 @@ app.post('/api/link', async (req, res) => {
         let codeSent = false;
         sock.ev.on('connection.update', (up) => {
             const { connection, lastDisconnect, qr } = up;
-
             if (qr && !codeSent && !sess.done) {
                 codeSent = true;
                 sess.qr = qr;
                 sess.status = 'waiting';
-
                 if (method === 'code' && phone) {
                     let clean = phone.replace(/\D/g, '');
                     if (clean.startsWith('0')) clean = clean.substring(1);
-                    sock.requestPairingCode(clean).then(c => {
-                        sess.code = c;
-                    }).catch(e => {
-                        sess.status = 'error';
-                        sess.error = 'Code failed: ' + e.message;
-                    });
+                    sock.requestPairingCode(clean).then(c => { sess.code = c; }).catch(e => { sess.status = 'error'; sess.error = 'Code failed: ' + e.message; });
                 }
             }
-
-            if (connection === 'open') {
-                sess.status = 'linked';
-                sess.done = true;
-            }
-
+            if (connection === 'open') { sess.status = 'linked'; sess.done = true; }
             if (connection === 'close') {
-                const c = lastDisconnect?.error?.output?.statusCode;
                 if (sess.done) return;
                 sess.done = true;
                 clearInterval(keepalive);
-
-                if (c === DisconnectReason.loggedOut) {
-                    sess.status = 'error';
-                    sess.error = 'Logged out';
-                } else if (c === 515 || c === 428 || c === 408) {
-                    // Stream error / timeout — retry once with QR
-                    sess.status = 'error';
-                    sess.error = 'Connection dropped (code ' + c + '). Try QR method or retry.';
-                } else {
-                    sess.status = 'error';
-                    sess.error = 'Closed (' + c + ')';
-                }
+                const c = lastDisconnect?.error?.output?.statusCode;
+                if (c === DisconnectReason.loggedOut) { sess.status = 'error'; sess.error = 'Logged out'; }
+                else if (c === 515 || c === 428 || c === 408) { sess.status = 'error'; sess.error = 'Connection dropped (' + c + '). Try QR or retry.'; }
+                else { sess.status = 'error'; sess.error = 'Closed (' + c + ')'; }
             }
         });
 
@@ -119,12 +89,10 @@ app.post('/api/retry', async (req, res) => {
         const oldId = req.body.id;
         const old = sessions.get(oldId);
         if (!old) return res.status(404).json({ error: 'Not found' });
-
         clearInterval(old.keepalive);
         try { old.sock.end(); } catch (e) {}
         sessions.delete(oldId);
 
-        // Retry with QR (more reliable on cloud)
         const id = 's_' + (sid++);
         const auth = makeAuth(null);
         const { version } = await fetchLatestBaileysVersion();
@@ -133,8 +101,7 @@ app.post('/api/retry', async (req, res) => {
             version, auth: auth.state, printQRInTerminal: false,
             logger: pino({ level: 'silent' }),
             shouldSyncHistoryMessage: () => false,
-            connectTimeoutMs: 60000,
-            keepAliveIntervalMs: 15000,
+            connectTimeoutMs: 60000, keepAliveIntervalMs: 15000,
         });
 
         const keepalive = startKeepalive(sock);
@@ -142,13 +109,9 @@ app.post('/api/retry', async (req, res) => {
         sessions.set(id, sess);
 
         sock.ev.on('creds.update', () => { sess.creds = ser(auth.state.creds); });
-
         sock.ev.on('connection.update', (up) => {
             const { connection, lastDisconnect, qr } = up;
-            if (qr && !sess.qr && !sess.done) {
-                sess.qr = qr;
-                sess.status = 'waiting';
-            }
+            if (qr && !sess.qr && !sess.done) { sess.qr = qr; sess.status = 'waiting'; }
             if (connection === 'open') { sess.status = 'linked'; sess.done = true; }
             if (connection === 'close') {
                 if (sess.done) return;
@@ -203,12 +166,12 @@ app.post('/api/group', async (req, res) => {
 
 app.delete('/api/session/:id', (req, res) => {
     const s = sessions.get(req.params.id);
-    if (s) {
-        clearInterval(s.keepalive);
-        try { s.sock.end(); } catch (e) {}
-        sessions.delete(req.params.id);
-    }
+    if (s) { clearInterval(s.keepalive); try { s.sock.end(); } catch (e) {} sessions.delete(req.params.id); }
     res.json({ ok: true });
+});
+
+app.get('/ping', (req, res) => {
+    res.json({ ok: true, time: new Date().toISOString(), sessions: sessions.size });
 });
 
 app.listen(PORT, () => console.log('Panel: http://localhost:' + PORT));
