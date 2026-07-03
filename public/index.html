@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WA Ban Panel</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: { extend: { colors: {
+    dark: { 900: '#0a0a0f', 800: '#12121a', 700: '#1a1a25', 600: '#252530' },
+    accent: { 500: '#ef4444', 600: '#dc2626', 700: '#b91c1c' }
+  }}}
+}
+</script>
+<style>
+  body { background: #0a0a0f; color: #e5e5e5; font-family: 'Segoe UI', system-ui, sans-serif; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #12121a; }
+  ::-webkit-scrollbar-thumb { background: #252530; border-radius: 3px; }
+  .glow { box-shadow: 0 0 20px rgba(239,68,68,0.15); }
+  .pulse-dot { animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+</style>
+</head>
+<body class="min-h-screen">
+<div class="max-w-6xl mx-auto p-4 md:p-6">
+  <div class="flex items-center gap-3 mb-8">
+    <div class="w-10 h-10 rounded-lg bg-accent-600 flex items-center justify-center text-white font-bold text-lg">B</div>
+    <div>
+      <h1 class="text-xl font-bold text-white">WA Ban Panel</h1>
+      <p class="text-xs text-gray-500">v4.0</p>
+    </div>
+    <div class="ml-auto flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-green-500 pulse-dot"></span>
+      <span class="text-xs text-gray-400">Online</span>
+    </div>
+  </div>
+  <div class="mb-8">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Sessions</h2>
+      <button onclick="addSession()" class="px-3 py-1.5 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">+ Add Session</button>
+    </div>
+    <div id="session-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div id="empty-sessions" class="col-span-full text-center py-12 text-gray-600 text-sm">No sessions. Click "+ Add Session" to start.</div>
+    </div>
+  </div>
+  <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-8 glow">
+    <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-5">Ban Configuration</h2>
+    <div class="flex gap-2 mb-5">
+      <button id="btn-num" onclick="setBanType('number')" class="px-4 py-2 rounded-lg text-xs font-medium transition bg-accent-600 text-white">Number</button>
+      <button id="btn-grp" onclick="setBanType('group')" class="px-4 py-2 rounded-lg text-xs font-medium transition bg-dark-600 text-gray-400 hover:text-white">Group</button>
+    </div>
+    <div id="inp-num" class="mb-4">
+      <label class="block text-xs text-gray-500 mb-1.5">Target Number</label>
+      <input id="target-number" type="text" placeholder="94771234567" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-accent-600">
+    </div>
+    <div id="inp-grp" class="mb-4 hidden">
+      <label class="block text-xs text-gray-500 mb-1.5">Group Invite Link</label>
+      <div class="flex gap-2">
+        <input id="target-group" type="text" placeholder="https://chat.whatsapp.com/..." class="flex-1 bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-accent-600">
+        <button onclick="resolveGroup()" class="px-4 py-2 bg-dark-600 hover:bg-dark-700 text-gray-300 text-xs rounded-lg transition">Resolve</button>
+      </div>
+      <div id="group-info" class="mt-2 text-xs text-gray-500"></div>
+    </div>
+    <div class="mb-5">
+      <label class="block text-xs text-gray-500 mb-1.5">Reports Per Session</label>
+      <div class="flex items-center gap-3">
+        <button onclick="changeCount(-1)" class="w-8 h-8 rounded-lg bg-dark-600 hover:bg-dark-700 text-gray-300 flex items-center justify-center transition">−</button>
+        <span id="report-count" class="text-lg font-bold text-white w-8 text-center">5</span>
+        <button onclick="changeCount(1)" class="w-8 h-8 rounded-lg bg-dark-600 hover:bg-dark-700 text-gray-300 flex items-center justify-center transition">+</button>
+      </div>
+    </div>
+    <div class="mb-5">
+      <label class="block text-xs text-gray-500 mb-2">Use Sessions</label>
+      <div id="session-checks" class="flex flex-wrap gap-2">
+        <span class="text-xs text-gray-600">Link sessions first</span>
+      </div>
+    </div>
+    <button onclick="executeBan()" id="btn-exec" class="w-full py-3 bg-accent-600 hover:bg-accent-700 disabled:bg-dark-600 disabled:text-gray-600 text-white font-semibold rounded-lg transition text-sm" disabled>EXECUTE BAN</button>
+  </div>
+  <div id="results-section" class="hidden mb-8">
+    <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Results</h2>
+    <div id="results-list" class="space-y-2 mb-4"></div>
+    <div id="results-summary" class="bg-dark-800 rounded-lg border border-dark-600 p-4 text-sm"></div>
+  </div>
+</div>
+<script>
+let sessions = [];
+let banType = 'number';
+let reportCount = 5;
+let groupJid = null;
+let pollingIntervals = {};
+
+async function api(path, body) {
+  const r = await fetch('/api/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  return r.json();
+}
+async function apiDel(path) { await fetch('/api/' + path, { method: 'DELETE' }); }
+
+function addSession() {
+  const id = 'local_' + Date.now();
+  sessions.push({ id: null, localId: id, phone: '', method: 'qr', qr: null, code: null, status: 'new', error: null, selected: true });
+  renderSessions();
+}
+
+function removeSession(localId) {
+  const s = sessions.find(x => x.localId === localId);
+  if (s && s.id) apiDel('session/' + s.id);
+  if (pollingIntervals[localId]) { clearInterval(pollingIntervals[localId]); delete pollingIntervals[localId]; }
+  sessions = sessions.filter(x => x.localId !== localId);
+  renderSessions();
+}
+
+async function linkSession(localId) {
+  const s = sessions.find(x => x.localId === localId);
+  if (!s) return;
+  s.status = 'connecting'; s.qr = null; s.code = null; s.error = null;
+  renderSessions();
+  try {
+    const res = await api('link', { phone: s.phone, method: s.method, creds: null });
+    s.id = res.id; s.qr = res.qr; s.code = res.code; s.status = res.status;
+    renderSessions(); drawQR(localId);
+    if (pollingIntervals[localId]) clearInterval(pollingIntervals[localId]);
+    pollingIntervals[localId] = setInterval(() => pollSession(localId), 2000);
+  } catch (e) { s.status = 'error'; s.error = e.message || 'Failed'; renderSessions(); }
+}
+
+async function pollSession(localId) {
+  const s = sessions.find(x => x.localId === localId);
+  if (!s || !s.id) return;
+  try {
+    const res = await api('check', { id: s.id });
+    const changed = s.status !== res.status || s.code !== res.code;
+    s.status = res.status; s.code = res.code || s.code; s.error = res.error;
+    if (res.status === 'linked' && changed) { clearInterval(pollingIntervals[localId]); delete pollingIntervals[localId]; }
+    if (changed) renderSessions();
+  } catch (e) {}
+}
+
+function drawQR(localId) {
+  const s = sessions.find(x => x.localId === localId);
+  if (!s || !s.qr) return;
+  setTimeout(() => {
+    const canvas = document.getElementById('qr-' + localId);
+    if (canvas && s.qr) QRCode.toCanvas(canvas, s.qr, { width: 180, margin: 1, color: { dark: '#ffffff', light: '#12121a' } });
+  }, 100);
+}
+
+function toggleMethod(localId, method) {
+  const s = sessions.find(x => x.localId === localId);
+  if (s) { s.method = method; renderSessions(); }
+}
+
+function toggleSelect(localId) {
+  const s = sessions.find(x => x.localId === localId);
+  if (s) { s.selected = !s.selected; renderSessions(); updateExecBtn(); }
+}
+
+function setBanType(t) {
+  banType = t;
+  document.getElementById('btn-num').className = t === 'number' ? 'px-4 py-2 rounded-lg text-xs font-medium transition bg-accent-600 text-white' : 'px-4 py-2 rounded-lg text-xs font-medium transition bg-dark-600 text-gray-400 hover:text-white';
+  document.getElementById('btn-grp').className = t === 'group' ? 'px-4 py-2 rounded-lg text-xs font-medium transition bg-accent-600 text-white' : 'px-4 py-2 rounded-lg text-xs font-medium transition bg-dark-600 text-gray-400 hover:text-white';
+  document.getElementById('inp-num').classList.toggle('hidden', t !== 'number');
+  document.getElementById('inp-grp').classList.toggle('hidden', t !== 'group');
+}
+
+function changeCount(d) {
+  reportCount = Math.max(1, Math.min(50, reportCount + d));
+  document.getElementById('report-count').textContent = reportCount;
+}
+
+async function resolveGroup() {
+  const link = document.getElementById('target-group').value.trim();
+  if (!link) return;
+  const linked = sessions.filter(s => s.status === 'linked');
+  if (!linked.length) { document.getElementById('group-info').innerHTML = '<span class="text-red-400">Link a session first</span>'; return; }
+  document.getElementById('group-info').innerHTML = '<span class="text-gray-500">Resolving...</span>';
+  try {
+    const res = await api('group', { id: linked[0].id, link });
+    groupJid = res.id;
+    document.getElementById('group-info').innerHTML = '<span class="text-green-400">"' + res.name + '" — ' + res.members + ' members</span>';
+  } catch (e) {
+    groupJid = null;
+    document.getElementById('group-info').innerHTML = '<span class="text-red-400">' + (e.error || 'Failed') + '</span>';
+  }
+}
+
+function updateExecBtn() {
+  const linked = sessions.filter(s => s.status === 'linked' && s.selected);
+  document.getElementById('btn-exec').disabled = linked.length === 0;
+  const checks = document.getElementById('session-checks');
+  if (!linked.length && sessions.length) checks.innerHTML = '<span class="text-xs text-gray-600">No linked sessions selected</span>';
+}
+
+function renderSessions() {
+  const grid = document.getElementById('session-grid');
+  if (!sessions.length) { grid.innerHTML = ''; grid.appendChild(createEmpty()); renderChecks(); updateExecBtn(); return; }
+  grid.innerHTML = sessions.map(s => {
+    const statusColor = s.status === 'linked' ? 'green' : s.status === 'error' ? 'red' : 'yellow';
+    const statusText = s.status === 'linked' ? 'Linked' : s.status === 'error' ? 'Error' : s.status === 'waiting' ? 'Waiting' : s.status === 'connecting' ? 'Connecting' : 'Ready';
+    const isLinked = s.status === 'linked';
+    return '<div class="bg-dark-800 rounded-xl border border-dark-600 p-4">' +
+      '<div class="flex items-center justify-between mb-3">' +
+        '<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-' + statusColor + '-500 ' + (s.status === 'waiting' || s.status === 'connecting' ? 'pulse-dot' : '') + '"></span><span class="text-xs text-gray-400">' + statusText + '</span></div>' +
+        '<button onclick="removeSession(\'' + s.localId + '\')" class="text-gray-600 hover:text-red-400 text-xs transition">✕</button></div>' +
+      '<input type="text" placeholder="Phone number" value="' + s.phone + '" onchange="updatePhone(\'' + s.localId + '\', this.value)" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 mb-3 focus:outline-none focus:border-accent-600">' +
+      '<div class="flex gap-1.5 mb-3">' +
+        '<button onclick="toggleMethod(\'' + s.localId + '\', \'qr\')" class="flex-1 py-1.5 rounded text-xs font-medium transition ' + (s.method === 'qr' ? 'bg-accent-600 text-white' : 'bg-dark-600 text-gray-500') + '">QR</button>' +
+        '<button onclick="toggleMethod(\'' + s.localId + '\', \'code\')" class="flex-1 py-1.5 rounded text-xs font-medium transition ' + (s.method === 'code' ? 'bg-accent-600 text-white' : 'bg-dark-600 text-gray-500') + '">Code</button></div>' +
+      (s.method === 'qr' && s.qr ? '<div class="flex justify-center mb-3 bg-dark-700 rounded-lg p-2"><canvas id="qr-' + s.localId + '" width="180" height="180"></canvas></div>' : '') +
+      (s.method === 'code' && s.code ? '<div class="text-center mb-3 py-3 bg-dark-700 rounded-lg"><div class="text-2xl font-bold text-white tracking-widest">' + s.code + '</div><div class="text-xs text-gray-500 mt-1">Enter on phone</div></div>' : '') +
+      (s.error ? '<div class="text-xs text-red-400 mb-3">' + s.error + '</div>' : '') +
+      (isLinked ? '<div class="flex items-center gap-2"><input type="checkbox" ' + (s.selected ? 'checked' : '') + ' onchange="toggleSelect(\'' + s.localId + '\')" class="accent-accent-600"><span class="text-xs text-gray-400">Use for ban</span></div>' :
+        '<button onclick="linkSession(\'' + s.localId + '\')" class="w-full py-2 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">Link</button>') + '</div>';
+  }).join('');
+  renderChecks(); updateExecBtn();
+  sessions.forEach(s => { if (s.method === 'qr' && s.qr) drawQR(s.localId); });
+}
+
+function createEmpty() {
+  const d = document.createElement('div');
+  d.id = 'empty-sessions';
+  d.className = 'col-span-full text-center py-12 text-gray-600 text-sm';
+  d.textContent = 'No sessions. Click "+ Add Session" to start.';
+  return d;
+}
+
+function renderChecks() {
+  const el = document.getElementById('session-checks');
+  const linked = sessions.filter(s => s.status === 'linked');
+  if (!linked.length) { el.innerHTML = '<span class="text-xs text-gray-600">Link sessions first</span>'; return; }
+  el.innerHTML = linked.map(s =>
+    '<label class="flex items-center gap-1.5 px-2.5 py-1.5 bg-dark-700 rounded-lg cursor-pointer">' +
+    '<input type="checkbox" ' + (s.selected ? 'checked' : '') + ' onchange="toggleSelect(\'' + s.localId + '\')" class="accent-accent-600">' +
+    '<span class="text-xs text-gray-300">' + (s.phone || s.id) + '</span></label>'
+  ).join('');
+}
+
+function updatePhone(localId, val) { const s = sessions.find(x => x.localId === localId); if (s) s.phone = val; }
+
+async function executeBan() {
+  const linked = sessions.filter(s => s.status === 'linked' && s.selected);
+  if (!linked.length) return;
+  let target;
+  if (banType === 'number') {
+    let n = document.getElementById('target-number').value.replace(/\D/g, '');
+    if (n.startsWith('0')) n = n.substring(1);
+    target = n + '@s.whatsapp.net';
+  } else { if (!groupJid) { alert('Resolve group first'); return; } target = groupJid; }
+  const btn = document.getElementById('btn-exec');
+  btn.disabled = true; btn.textContent = 'RUNNING...';
+  const resultsSection = document.getElementById('results-section');
+  const resultsList = document.getElementById('results-list');
+  resultsSection.classList.remove('hidden'); resultsList.innerHTML = '';
+  let totalSent = 0, totalFail = 0;
+  for (const s of linked) {
+    const div = document.createElement('div');
+    div.className = 'bg-dark-800 rounded-lg border border-dark-600 p-3';
+    div.innerHTML = '<div class="flex justify-between text-xs mb-2"><span class="text-gray-400">' + (s.phone || s.id) + '</span><span class="text-yellow-400">Running...</span></div><div class="w-full bg-dark-600 rounded-full h-1.5"><div class="bg-accent-600 h-1.5 rounded-full transition-all duration-500" style="width:0%"></div></div>';
+    resultsList.appendChild(div);
+    try {
+      const res = await api('ban', { id: s.id, target, type: banType, count: reportCount });
+      totalSent += res.sent; totalFail += res.failed;
+      div.innerHTML = '<div class="flex justify-between text-xs mb-2"><span class="text-gray-400">' + (s.phone || s.id) + '</span><span class="text-green-400">' + res.sent + '/' + reportCount + ' sent</span></div><div class="w-full bg-dark-600 rounded-full h-1.5"><div class="bg-green-500 h-1.5 rounded-full" style="width:' + Math.round((res.sent/reportCount)*100) + '%"></div></div>';
+    } catch (e) {
+      totalFail += reportCount;
+      div.innerHTML = '<div class="flex justify-between text-xs mb-2"><span class="text-gray-400">' + (s.phone || s.id) + '</span><span class="text-red-400">Failed</span></div><div class="w-full bg-dark-600 rounded-full h-1.5"><div class="bg-red-500 h-1.5 rounded-full" style="width:0%"></div></div>';
+    }
+  }
+  document.getElementById('results-summary').innerHTML =
+    '<div class="flex justify-between"><span class="text-gray-400">Total Reports</span><span class="text-white font-bold">' + (totalSent + totalFail) + '</span></div>' +
+    '<div class="flex justify-between mt-1"><span class="text-gray-400">Sent</span><span class="text-green-400">' + totalSent + '</span></div>' +
+    '<div class="flex justify-between mt-1"><span class="text-gray-400">Failed</span><span class="text-red-400">' + totalFail + '</span></div>';
+  btn.disabled = false; btn.textContent = 'EXECUTE BAN';
+}
+
+renderSessions();
+</script>
+</body>
+</html>
