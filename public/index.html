@@ -25,6 +25,7 @@ tailwind.config = {
   @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
   #debug-modal { display:none; }
   #debug-modal.show { display:flex; }
+  #qr-display { image-rendering: pixelated; }
 </style>
 </head>
 <body class="min-h-screen">
@@ -33,7 +34,7 @@ tailwind.config = {
     <div class="w-10 h-10 rounded-lg bg-accent-600 flex items-center justify-center text-white font-bold text-lg">V</div>
     <div>
       <h1 class="text-xl font-bold text-white">VERTEX PANEL</h1>
-      <p class="text-xs text-gray-500">v4.2</p>
+      <p class="text-xs text-gray-500">v4.3</p>
     </div>
     <div class="ml-auto flex items-center gap-3">
       <button onclick="openDebug()" class="px-3 py-1.5 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs font-medium rounded-lg transition">Debug</button>
@@ -93,7 +94,6 @@ tailwind.config = {
   </div>
 </div>
 
-<!-- Debug Modal -->
 <div id="debug-modal" class="fixed inset-0 bg-black/80 z-50 items-center justify-center p-4">
   <div class="bg-dark-800 rounded-xl border border-dark-600 w-full max-w-2xl max-h-[80vh] flex flex-col">
     <div class="flex items-center justify-between p-4 border-b border-dark-600">
@@ -123,10 +123,7 @@ async function api(path, body) {
 async function apiGet(path) { return (await fetch('/api/' + path)).json(); }
 async function apiDel(path) { await fetch('/api/' + path, { method: 'DELETE' }); }
 
-function openDebug() {
-  document.getElementById('debug-modal').classList.add('show');
-  refreshDebug();
-}
+function openDebug() { document.getElementById('debug-modal').classList.add('show'); refreshDebug(); }
 function closeDebug() { document.getElementById('debug-modal').classList.remove('show'); }
 
 async function refreshDebug() {
@@ -136,22 +133,34 @@ async function refreshDebug() {
       '<span class="text-gray-500">Node:</span> <span class="text-white">' + d.node + '</span> &nbsp; ' +
       '<span class="text-gray-500">Baileys:</span> <span class="text-white">' + d.baileys + '</span> &nbsp; ' +
       '<span class="text-gray-500">Platform:</span> <span class="text-white">' + d.platform + '</span> &nbsp; ' +
-      '<span class="text-gray-500">Sessions:</span> <span class="text-white">' + d.sessions + '</span>' +
-      '<br><span class="text-gray-500">Env:</span> <span class="text-gray-300">' + JSON.stringify(d.env) + '</span>';
+      '<span class="text-gray-500">Sessions:</span> <span class="text-white">' + d.sessions + '</span>';
     document.getElementById('debug-logs').innerHTML = d.logs.map(l =>
       '<div class="' + (l.msg.includes('ERROR') || l.msg.includes('FATAL') || l.msg.includes('CLOSED') ? 'text-red-400' : l.msg.includes('QR') || l.msg.includes('LINKED') ? 'text-green-400' : 'text-gray-400') + '">[' + l.time.split('T')[1].split('.')[0] + '] ' + l.msg + '</div>'
     ).join('');
     document.getElementById('debug-logs').scrollTop = 99999;
   } catch (e) {
-    document.getElementById('debug-logs').innerHTML = '<div class="text-red-400">Failed to fetch debug info: ' + e.message + '</div>';
+    document.getElementById('debug-logs').innerHTML = '<div class="text-red-400">Failed: ' + e.message + '</div>';
   }
 }
 
 async function runTestConnect() {
-  document.getElementById('debug-logs').innerHTML += '<div class="text-yellow-400">--- Running test connection ---</div>';
+  document.getElementById('debug-logs').innerHTML += '<div class="text-yellow-400">--- Test starting ---</div>';
+  document.getElementById('debug-logs').scrollTop = 99999;
   try {
     const r = await api('test-connect', {});
-    document.getElementById('debug-logs').innerHTML += '<div class="text-white">Result: ' + JSON.stringify(r) + '</div>';
+    if (r.success && r.qr) {
+      document.getElementById('debug-logs').innerHTML += '<div class="text-green-400">QR generated! Length: ' + r.qr.length + '</div>';
+      try {
+        const c = document.createElement('canvas');
+        await QRCode.toCanvas(c, r.qr, { width: 200, margin: 1 });
+        const img = c.toDataURL();
+        document.getElementById('debug-logs').innerHTML += '<div class="text-green-400">QR render OK</div><img src="' + img + '" style="width:150px;margin:8px 0;border:1px solid #333;border-radius:8px;">';
+      } catch (e) {
+        document.getElementById('debug-logs').innerHTML += '<div class="text-red-400">QR render FAILED: ' + e.message + '</div>';
+      }
+    } else {
+      document.getElementById('debug-logs').innerHTML += '<div class="text-white">Result: ' + JSON.stringify(r) + '</div>';
+    }
   } catch (e) {
     document.getElementById('debug-logs').innerHTML += '<div class="text-red-400">Test failed: ' + e.message + '</div>';
   }
@@ -181,7 +190,9 @@ async function linkSession(localId) {
   try {
     const res = await api('link', { phone: s.phone, method: s.method, creds: null });
     s.id = res.id; s.qr = res.qr; s.code = res.code; s.status = res.status; s.error = res.error;
-    renderSessions(); drawQR(localId);
+    console.log('Link response:', JSON.stringify({ id: s.id, hasQR: !!s.qr, qrLen: s.qr ? s.qr.length : 0, code: s.code, status: s.status }));
+    renderSessions();
+    drawQR(localId);
     if (pollingIntervals[localId]) clearInterval(pollingIntervals[localId]);
     pollingIntervals[localId] = setInterval(() => pollSession(localId), 2000);
   } catch (e) { s.status = 'error'; s.error = e.message || 'Failed'; renderSessions(); }
@@ -215,16 +226,44 @@ async function pollSession(localId) {
 
 function drawQR(localId) {
   const s = sessions.find(x => x.localId === localId);
-  if (!s || !s.qr) return;
+  if (!s || !s.qr) { console.log('drawQR skip: no qr data for', localId); return; }
+
+  // Wait for DOM to be ready
   setTimeout(() => {
     const canvas = document.getElementById('qr-' + localId);
-    if (canvas && s.qr) QRCode.toCanvas(canvas, s.qr, { width: 180, margin: 1, color: { dark: '#ffffff', light: '#12121a' } });
-  }, 100);
+    console.log('drawQR: canvas found?', !!canvas, 'for', localId);
+    if (!canvas) return;
+
+    try {
+      QRCode.toCanvas(canvas, s.qr, {
+        width: 180,
+        margin: 1,
+        color: { dark: '#ffffff', light: '#12121a' }
+      }).then(() => {
+        console.log('drawQR: success for', localId);
+      }).catch(err => {
+        console.error('drawQR error:', err);
+        // Fallback: use img tag
+        QRCode.toDataURL(s.qr, {
+          width: 180, margin: 1,
+          color: { dark: '#ffffff', light: '#12121a' }
+        }).then(url => {
+          const img = document.createElement('img');
+          img.src = url;
+          img.style.width = '180px';
+          img.style.borderRadius = '8px';
+          canvas.parentNode.replaceChild(img, canvas);
+        });
+      });
+    } catch (e) {
+      console.error('drawQR fatal:', e);
+    }
+  }, 200);
 }
 
 function toggleMethod(localId, method) {
   const s = sessions.find(x => x.localId === localId);
-  if (s) { s.method = method; renderSessions(); }
+  if (s) { s.method = method; s.qr = null; s.code = null; s.status = 'new'; s.error = null; renderSessions(); }
 }
 
 function toggleSelect(localId) {
@@ -255,10 +294,7 @@ async function resolveGroup() {
     const res = await api('group', { id: linked[0].id, link });
     groupJid = res.id;
     document.getElementById('group-info').innerHTML = '<span class="text-green-400">"' + res.name + '" — ' + res.members + ' members</span>';
-  } catch (e) {
-    groupJid = null;
-    document.getElementById('group-info').innerHTML = '<span class="text-red-400">' + (e.error || 'Failed') + '</span>';
-  }
+  } catch (e) { groupJid = null; document.getElementById('group-info').innerHTML = '<span class="text-red-400">' + (e.error || 'Failed') + '</span>'; }
 }
 
 function updateExecBtn() {
@@ -271,23 +307,33 @@ function updateExecBtn() {
 function renderSessions() {
   const grid = document.getElementById('session-grid');
   if (!sessions.length) { grid.innerHTML = ''; grid.appendChild(createEmpty()); renderChecks(); updateExecBtn(); return; }
+
   grid.innerHTML = sessions.map(s => {
-    const statusColor = s.status === 'linked' ? 'green' : s.status === 'error' ? 'red' : 'yellow';
-    const statusText = s.status === 'linked' ? 'Linked' : s.status === 'error' ? 'Error' : s.status === 'waiting' ? 'Waiting' : s.status === 'connecting' ? 'Connecting' : 'Ready';
-    const isLinked = s.status === 'linked';
-    const isError = s.status === 'error';
+    const sc = s.status === 'linked' ? 'green' : s.status === 'error' ? 'red' : 'yellow';
+    const st = s.status === 'linked' ? 'Linked' : s.status === 'error' ? 'Error' : s.status === 'waiting' ? 'Waiting' : s.status === 'connecting' ? 'Connecting' : 'Ready';
     let bottom = '';
-    if (isLinked) {
+    if (s.status === 'linked') {
       bottom = '<div class="flex items-center gap-2"><input type="checkbox" ' + (s.selected ? 'checked' : '') + ' onchange="toggleSelect(\'' + s.localId + '\')" class="accent-accent-600"><span class="text-xs text-gray-400">Use for ban</span></div>';
-    } else if (isError) {
+    } else if (s.status === 'error') {
       bottom = '<div class="flex gap-2"><button onclick="retryWithQR(\'' + s.localId + '\')" class="flex-1 py-2 bg-yellow-600 hover:bg-yellow-700 text-white text-xs font-medium rounded-lg transition">Retry QR</button><button onclick="linkSession(\'' + s.localId + '\')" class="flex-1 py-2 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">Retry</button></div>';
     } else {
       bottom = '<button onclick="linkSession(\'' + s.localId + '\')" class="w-full py-2 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">Link</button>';
     }
-    return '<div class="bg-dark-800 rounded-xl border border-dark-600 p-4"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-' + statusColor + '-500 ' + (s.status === 'waiting' || s.status === 'connecting' ? 'pulse-dot' : '') + '"></span><span class="text-xs text-gray-400">' + statusText + '</span></div><button onclick="removeSession(\'' + s.localId + '\')" class="text-gray-600 hover:text-red-400 text-xs transition">✕</button></div><input type="text" placeholder="Phone number" value="' + s.phone + '" onchange="updatePhone(\'' + s.localId + '\', this.value)" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 mb-3 focus:outline-none focus:border-accent-600"><div class="flex gap-1.5 mb-3"><button onclick="toggleMethod(\'' + s.localId + '\', \'qr\')" class="flex-1 py-1.5 rounded text-xs font-medium transition ' + (s.method === 'qr' ? 'bg-accent-600 text-white' : 'bg-dark-600 text-gray-500') + '">QR</button><button onclick="toggleMethod(\'' + s.localId + '\', \'code\')" class="flex-1 py-1.5 rounded text-xs font-medium transition ' + (s.method === 'code' ? 'bg-accent-600 text-white' : 'bg-dark-600 text-gray-500') + '">Code</button></div>' + (s.method === 'qr' && s.qr ? '<div class="flex justify-center mb-3 bg-dark-700 rounded-lg p-2"><canvas id="qr-' + s.localId + '" width="180" height="180"></canvas></div>' : '') + (s.method === 'code' && s.code ? '<div class="text-center mb-3 py-3 bg-dark-700 rounded-lg"><div class="text-2xl font-bold text-white tracking-widest">' + s.code + '</div><div class="text-xs text-gray-500 mt-1">Enter on phone</div></div>' : '') + (s.error ? '<div class="text-xs text-red-400 mb-3">' + s.error + '</div>' : '') + bottom + '</div>';
+    return '<div class="bg-dark-800 rounded-xl border border-dark-600 p-4">' +
+      '<div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-' + sc + '-500 ' + (s.status === 'waiting' || s.status === 'connecting' ? 'pulse-dot' : '') + '"></span><span class="text-xs text-gray-400">' + st + '</span></div><button onclick="removeSession(\'' + s.localId + '\')" class="text-gray-600 hover:text-red-400 text-xs transition">✕</button></div>' +
+      (s.method === 'code' ? '<input type="text" placeholder="Phone number" value="' + s.phone + '" onchange="updatePhone(\'' + s.localId + '\', this.value)" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 mb-3 focus:outline-none focus:border-accent-600">' : '') +
+      '<div class="flex gap-1.5 mb-3"><button onclick="toggleMethod(\'' + s.localId + '\', \'qr\')" class="flex-1 py-1.5 rounded text-xs font-medium transition ' + (s.method === 'qr' ? 'bg-accent-600 text-white' : 'bg-dark-600 text-gray-500') + '">QR</button><button onclick="toggleMethod(\'' + s.localId + '\', \'code\')" class="flex-1 py-1.5 rounded text-xs font-medium transition ' + (s.method === 'code' ? 'bg-accent-600 text-white' : 'bg-dark-600 text-gray-500') + '">Code</button></div>' +
+      (s.method === 'qr' && s.qr ? '<div class="flex justify-center mb-3 bg-dark-700 rounded-lg p-3"><canvas id="qr-' + s.localId + '" width="180" height="180"></canvas></div>' : '') +
+      (s.method === 'code' && s.code ? '<div class="text-center mb-3 py-3 bg-dark-700 rounded-lg"><div class="text-2xl font-bold text-white tracking-widest">' + s.code + '</div><div class="text-xs text-gray-500 mt-1">Enter on phone</div></div>' : '') +
+      (s.error ? '<div class="text-xs text-red-400 mb-3">' + s.error + '</div>' : '') +
+      bottom + '</div>';
   }).join('');
+
   renderChecks(); updateExecBtn();
-  sessions.forEach(s => { if (s.method === 'qr' && s.qr) drawQR(s.localId); });
+  // Draw QRs after DOM update
+  requestAnimationFrame(() => {
+    sessions.forEach(s => { if (s.method === 'qr' && s.qr) drawQR(s.localId); });
+  });
 }
 
 function createEmpty() {
@@ -328,10 +374,7 @@ async function executeBan() {
       const res = await api('ban', { id: s.id, target, type: banType, count: reportCount });
       totalSent += res.sent; totalFail += res.failed;
       div.innerHTML = '<div class="flex justify-between text-xs mb-2"><span class="text-gray-400">' + (s.phone || s.id) + '</span><span class="text-green-400">' + res.sent + '/' + reportCount + ' sent</span></div><div class="w-full bg-dark-600 rounded-full h-1.5"><div class="bg-green-500 h-1.5 rounded-full" style="width:' + Math.round((res.sent/reportCount)*100) + '%"></div></div>';
-    } catch (e) {
-      totalFail += reportCount;
-      div.innerHTML = '<div class="flex justify-between text-xs mb-2"><span class="text-gray-400">' + (s.phone || s.id) + '</span><span class="text-red-400">Failed</span></div><div class="w-full bg-dark-600 rounded-full h-1.5"><div class="bg-red-500 h-1.5 rounded-full" style="width:0%"></div></div>';
-    }
+    } catch (e) { totalFail += reportCount; div.innerHTML = '<div class="flex justify-between text-xs mb-2"><span class="text-gray-400">' + (s.phone || s.id) + '</span><span class="text-red-400">Failed</span></div><div class="w-full bg-dark-600 rounded-full h-1.5"><div class="bg-red-500 h-1.5 rounded-full" style="width:0%"></div></div>'; }
   }
   document.getElementById('results-summary').innerHTML = '<div class="flex justify-between"><span class="text-gray-400">Total Reports</span><span class="text-white font-bold">' + (totalSent + totalFail) + '</span></div><div class="flex justify-between mt-1"><span class="text-gray-400">Sent</span><span class="text-green-400">' + totalSent + '</span></div><div class="flex justify-between mt-1"><span class="text-gray-400">Failed</span><span class="text-red-400">' + totalFail + '</span></div>';
   btn.disabled = false; btn.textContent = 'EXECUTE BAN';
