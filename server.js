@@ -38,7 +38,7 @@ app.get('/ping', (req, res) => {
     res.json({ ok: true, time: new Date().toISOString(), sessions: sessions.size });
 });
 
-app.get('/debug', (req, res) => {
+app.get('/api/debug', (req, res) => {
     res.json({
         node: process.version,
         baileys: require('@whiskeysockets/baileys/package.json').version,
