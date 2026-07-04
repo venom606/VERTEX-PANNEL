@@ -9,20 +9,24 @@
 tailwind.config={darkMode:'class',theme:{extend:{colors:{dark:{900:'#0a0a0f',800:'#12121a',700:'#1a1a25',600:'#252530'},accent:{500:'#ef4444',600:'#dc2626',700:'#b91c1c'}}}}}
 </script>
 <style>
-body{background:#0a0a0f;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-serif}
+body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-serif}
 ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#12121a}::-webkit-scrollbar-thumb{background:#252530;border-radius:3px}
 .glow{box-shadow:0 0 20px rgba(239,68,68,0.15)}.pulse-dot{animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 #debug-modal{display:none}#debug-modal.show{display:flex}
 .report-row{animation:fadeSlide .3s ease}
-@keyframes fadeSlide{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeSlide{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
+.sending-pulse{animation:sendPulse 1.2s ease-in-out infinite}
+@keyframes sendPulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.success-flash{animation:successFlash .6s ease}
+@keyframes successFlash{0%{background-color:rgba(34,197,94,0.2)}100%{background-color:transparent}}
 </style>
 </head>
 <body class="min-h-screen">
 <div class="max-w-6xl mx-auto p-4 md:p-6">
   <div class="flex items-center gap-3 mb-8">
     <div class="w-10 h-10 rounded-lg bg-accent-600 flex items-center justify-center text-white font-bold text-lg">V</div>
-    <div><h1 class="text-xl font-bold text-white">VERTEX PANEL</h1><p class="text-xs text-gray-500">v4.7</p></div>
+    <div><h1 class="text-xl font-bold text-white">VERTEX PANEL</h1><p class="text-xs text-gray-500">v4.8 — Baileys 6.3.0</p></div>
     <div class="ml-auto flex items-center gap-3">
       <button onclick="openDebug()" class="px-3 py-1.5 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs font-medium rounded-lg transition">Debug</button>
       <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-green-500 pulse-dot"></span><span class="text-xs text-gray-400">Online</span></div>
@@ -71,6 +75,10 @@ body{background:#0a0a0f;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
   </div>
   <div id="results-section" class="hidden mb-8">
     <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Live Report Feed</h2>
+    <div id="sending-indicator" class="hidden mb-3 flex items-center gap-3 px-4 py-3 bg-dark-700 rounded-lg border border-dark-600">
+      <div class="flex gap-1.5"><span class="w-2 h-2 rounded-full bg-accent-600 sending-pulse"></span><span class="w-2 h-2 rounded-full bg-accent-600 sending-pulse" style="animation-delay:0.3s"></span><span class="w-2 h-2 rounded-full bg-accent-600 sending-pulse" style="animation-delay:0.6s"></span></div>
+      <span class="text-accent-400 text-sm font-medium">Sending reports...</span>
+    </div>
     <div id="results-list" class="space-y-1.5 mb-4"></div>
     <div id="results-summary" class="bg-dark-800 rounded-lg border border-dark-600 p-4 text-sm hidden"></div>
   </div>
@@ -101,7 +109,7 @@ async function refreshDebug(){
     let ai='';
     if(d.authDirs&&d.authDirs.length)ai='<br><span class="text-gray-500 mt-1 block">Auth:</span> '+d.authDirs.map(a=>'<span class="'+(a.hasCreds?'text-green-400':'text-gray-500')+'">'+a.dir+(a.hasCreds?' ('+(a.registered?'reg':'unreg')+')':' (empty)')+'</span>').join(' ');
     document.getElementById('debug-info').innerHTML='<span class="text-gray-500">Node:</span> <span class="text-white">'+d.node+'</span> <span class="text-gray-500">Baileys:</span> <span class="text-white">'+d.baileys+'</span> <span class="text-gray-500">Sessions:</span> <span class="text-white">'+d.sessions+'</span>'+ai;
-    document.getElementById('debug-logs').innerHTML=d.logs.map(l=>{let c='text-gray-400';if(l.msg.includes('CLOSED')||l.msg.includes('error')||l.msg.includes('Error'))c='text-red-400';else if(l.msg.includes('QR')||l.msg.includes('OPEN')||l.msg.includes('sent=')||l.msg.includes('Message sent'))c='text-green-400';else if(l.msg.includes('Reconnect'))c='text-yellow-400';return'<div class="'+c+'">['+l.time.split('T')[1].split('.')[0]+'] '+l.msg+'</div>'}).join('');
+    document.getElementById('debug-logs').innerHTML=d.logs.map(l=>{let c='text-gray-400';if(l.msg.includes('CLOSED')||l.msg.includes('error')||l.msg.includes('Error'))c='text-red-400';else if(l.msg.includes('QR')||l.msg.includes('OPEN')||l.msg.includes('Sent')||l.msg.includes('Message sent'))c='text-green-400';else if(l.msg.includes('Reconnect'))c='text-yellow-400';return'<div class="'+c+'">['+l.time.split('T')[1].split('.')[0]+'] '+l.msg+'</div>'}).join('');
     document.getElementById('debug-logs').scrollTop=99999;
   }catch(e){document.getElementById('debug-logs').innerHTML='<div class="text-red-400">'+e.message+'</div>'}
 }
@@ -194,23 +202,19 @@ async function executeBan(){
   let target;
   if(banType==='number'){let n=document.getElementById('target-number').value.replace(/\D/g,'');if(n.startsWith('0'))n=n.substring(1);target=n+'@s.whatsapp.net'}
   else{if(!groupJid){alert('Resolve group first');return}target=groupJid}
-
   const btn=document.getElementById('btn-exec');btn.disabled=true;btn.textContent='SENDING...';
-  const rs=document.getElementById('results-section');const rl=document.getElementById('results-list');const sm=document.getElementById('results-summary');
+  const rs=document.getElementById('results-section');const rl=document.getElementById('results-list');const si=document.getElementById('sending-indicator');const sm=document.getElementById('results-summary');
   rs.classList.remove('hidden');rl.innerHTML='';sm.classList.add('hidden');
 
-  // Send ban requests
   for(const s of linked){
     try{await api('ban',{id:s.id,target,type:banType,count:reportCount})}catch(e){}
-    // Start fast polling for this session
     const lid=s.localId;
     const intv=setInterval(async()=>{
-      const s=sessions.find(x=>x.localId===lid);
-      if(!s){clearInterval(intv);return}
+      const s=sessions.find(x=>x.localId===lid);if(!s){clearInterval(intv);return}
       const res=await api('check',{id:s.id});
       s.reports=res.reports;s.banStatus=res.banStatus;s.banMessageStatus=res.banMessageStatus;
-      // Update report feed
       if(res.reports&&res.reports.length){
+        si.classList.add('hidden');
         let html='';
         for(const r of res.reports){
           const ok=r.status==='sent';
@@ -218,13 +222,12 @@ async function executeBan(){
         }
         rl.innerHTML=html;
       }
-      // Check if complete
       if(res.banStatus==='complete'){
         clearInterval(intv);
         const sent=res.reports.filter(r=>r.status==='sent').length;
         const failed=res.reports.filter(r=>r.status==='failed').length;
-        sm.classList.remove('hidden');
-        sm.innerHTML='<div class="space-y-2"><div class="text-green-400 font-semibold text-sm">SUCCESSFUL</div><div class="flex justify-between"><span class="text-gray-400">Total</span><span class="text-white font-bold">'+(sent+failed)+'</span></div><div class="flex justify-between"><span class="text-gray-400">Sent</span><span class="text-green-400">'+sent+'</span></div><div class="flex justify-between"><span class="text-gray-400">Failed</span><span class="text-red-400">'+failed+'</span></div>'+(res.banMessageStatus==='sent'?'<div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Message to target</span><span class="text-green-400">Sent</span></div>':res.banMessageStatus&&res.banMessageStatus.startsWith('failed')?'<div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Message to target</span><span class="text-red-400">Failed</span></div>':'')+'</div>';
+        sm.classList.remove('hidden');sm.classList.add('success-flash');
+        sm.innerHTML='<div class="space-y-2"><div class="text-green-400 font-semibold text-sm">SUCCESSFUL</div><div class="flex justify-between"><span class="text-gray-400">Total</span><span class="text-white font-bold">'+(sent+failed)+'</span></div><div class="flex justify-between"><span class="text-gray-400">Sent</span><span class="text-green-400">'+sent+'</span></div><div class="flex justify-between"><span class="text-gray-400">Failed</span><span class="text-red-400">'+failed+'</span></div>'+(res.banMessageStatus==='sent'?'<div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Message to you</span><span class="text-green-400">Delivered</span></div>':res.banMessageStatus&&res.banMessageStatus.startsWith('failed')?'<div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Message to you</span><span class="text-red-400">Failed</span></div>':'')+'</div>';
         btn.disabled=false;btn.textContent='EXECUTE BAN';
       }
     },800);
