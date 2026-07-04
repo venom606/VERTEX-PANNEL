@@ -10,8 +10,9 @@
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.9",
+    "commit directly - do NOT use 6.3.0",
     "express": "^4.19.2",
-    "pino": "^9.5.0",
+    "11": "^9.5.0",
     "qrcode": "^1.5.4"
   }
 }
