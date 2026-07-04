@@ -23,6 +23,8 @@ tailwind.config = {
   .glow { box-shadow: 0 0 20px rgba(239,68,68,0.15); }
   .pulse-dot { animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  #debug-modal { display:none; }
+  #debug-modal.show { display:flex; }
 </style>
 </head>
 <body class="min-h-screen">
@@ -31,11 +33,14 @@ tailwind.config = {
     <div class="w-10 h-10 rounded-lg bg-accent-600 flex items-center justify-center text-white font-bold text-lg">V</div>
     <div>
       <h1 class="text-xl font-bold text-white">VERTEX PANEL</h1>
-      <p class="text-xs text-gray-500">v4.1</p>
+      <p class="text-xs text-gray-500">v4.2</p>
     </div>
-    <div class="ml-auto flex items-center gap-2">
-      <span class="w-2 h-2 rounded-full bg-green-500 pulse-dot"></span>
-      <span class="text-xs text-gray-400">Online</span>
+    <div class="ml-auto flex items-center gap-3">
+      <button onclick="openDebug()" class="px-3 py-1.5 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs font-medium rounded-lg transition">Debug</button>
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-green-500 pulse-dot"></span>
+        <span class="text-xs text-gray-400">Online</span>
+      </div>
     </div>
   </div>
   <div class="mb-8">
@@ -87,6 +92,23 @@ tailwind.config = {
     <div id="results-summary" class="bg-dark-800 rounded-lg border border-dark-600 p-4 text-sm"></div>
   </div>
 </div>
+
+<!-- Debug Modal -->
+<div id="debug-modal" class="fixed inset-0 bg-black/80 z-50 items-center justify-center p-4">
+  <div class="bg-dark-800 rounded-xl border border-dark-600 w-full max-w-2xl max-h-[80vh] flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-dark-600">
+      <h3 class="text-sm font-bold text-white">DEBUG LOG</h3>
+      <div class="flex gap-2">
+        <button onclick="runTestConnect()" class="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white text-xs rounded-lg transition">Test Connection</button>
+        <button onclick="refreshDebug()" class="px-3 py-1 bg-dark-600 hover:bg-dark-700 text-gray-300 text-xs rounded-lg transition">Refresh</button>
+        <button onclick="closeDebug()" class="px-3 py-1 bg-dark-600 hover:bg-dark-700 text-gray-300 text-xs rounded-lg transition">Close</button>
+      </div>
+    </div>
+    <div id="debug-info" class="p-4 border-b border-dark-600 text-xs text-gray-400"></div>
+    <div id="debug-logs" class="p-4 overflow-y-auto flex-1 font-mono text-xs space-y-1"></div>
+  </div>
+</div>
+
 <script>
 let sessions = [];
 let banType = 'number';
@@ -98,7 +120,44 @@ async function api(path, body) {
   const r = await fetch('/api/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   return r.json();
 }
+async function apiGet(path) { return (await fetch('/api/' + path)).json(); }
 async function apiDel(path) { await fetch('/api/' + path, { method: 'DELETE' }); }
+
+function openDebug() {
+  document.getElementById('debug-modal').classList.add('show');
+  refreshDebug();
+}
+function closeDebug() { document.getElementById('debug-modal').classList.remove('show'); }
+
+async function refreshDebug() {
+  try {
+    const d = await apiGet('debug');
+    document.getElementById('debug-info').innerHTML =
+      '<span class="text-gray-500">Node:</span> <span class="text-white">' + d.node + '</span> &nbsp; ' +
+      '<span class="text-gray-500">Baileys:</span> <span class="text-white">' + d.baileys + '</span> &nbsp; ' +
+      '<span class="text-gray-500">Platform:</span> <span class="text-white">' + d.platform + '</span> &nbsp; ' +
+      '<span class="text-gray-500">Sessions:</span> <span class="text-white">' + d.sessions + '</span>' +
+      '<br><span class="text-gray-500">Env:</span> <span class="text-gray-300">' + JSON.stringify(d.env) + '</span>';
+    document.getElementById('debug-logs').innerHTML = d.logs.map(l =>
+      '<div class="' + (l.msg.includes('ERROR') || l.msg.includes('FATAL') || l.msg.includes('CLOSED') ? 'text-red-400' : l.msg.includes('QR') || l.msg.includes('LINKED') ? 'text-green-400' : 'text-gray-400') + '">[' + l.time.split('T')[1].split('.')[0] + '] ' + l.msg + '</div>'
+    ).join('');
+    document.getElementById('debug-logs').scrollTop = 99999;
+  } catch (e) {
+    document.getElementById('debug-logs').innerHTML = '<div class="text-red-400">Failed to fetch debug info: ' + e.message + '</div>';
+  }
+}
+
+async function runTestConnect() {
+  document.getElementById('debug-logs').innerHTML += '<div class="text-yellow-400">--- Running test connection ---</div>';
+  try {
+    const r = await api('test-connect', {});
+    document.getElementById('debug-logs').innerHTML += '<div class="text-white">Result: ' + JSON.stringify(r) + '</div>';
+  } catch (e) {
+    document.getElementById('debug-logs').innerHTML += '<div class="text-red-400">Test failed: ' + e.message + '</div>';
+  }
+  document.getElementById('debug-logs').scrollTop = 99999;
+  setTimeout(refreshDebug, 2000);
+}
 
 function addSession() {
   const id = 'local_' + Date.now();
@@ -221,24 +280,11 @@ function renderSessions() {
     if (isLinked) {
       bottom = '<div class="flex items-center gap-2"><input type="checkbox" ' + (s.selected ? 'checked' : '') + ' onchange="toggleSelect(\'' + s.localId + '\')" class="accent-accent-600"><span class="text-xs text-gray-400">Use for ban</span></div>';
     } else if (isError) {
-      bottom = '<div class="flex gap-2">' +
-        '<button onclick="retryWithQR(\'' + s.localId + '\')" class="flex-1 py-2 bg-yellow-600 hover:bg-yellow-700 text-white text-xs font-medium rounded-lg transition">Retry QR</button>' +
-        '<button onclick="linkSession(\'' + s.localId + '\')" class="flex-1 py-2 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">Retry</button></div>';
+      bottom = '<div class="flex gap-2"><button onclick="retryWithQR(\'' + s.localId + '\')" class="flex-1 py-2 bg-yellow-600 hover:bg-yellow-700 text-white text-xs font-medium rounded-lg transition">Retry QR</button><button onclick="linkSession(\'' + s.localId + '\')" class="flex-1 py-2 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">Retry</button></div>';
     } else {
       bottom = '<button onclick="linkSession(\'' + s.localId + '\')" class="w-full py-2 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">Link</button>';
     }
-    return '<div class="bg-dark-800 rounded-xl border border-dark-600 p-4">' +
-      '<div class="flex items-center justify-between mb-3">' +
-        '<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-' + statusColor + '-500 ' + (s.status === 'waiting' || s.status === 'connecting' ? 'pulse-dot' : '') + '"></span><span class="text-xs text-gray-400">' + statusText + '</span></div>' +
-        '<button onclick="removeSession(\'' + s.localId + '\')" class="text-gray-600 hover:text-red-400 text-xs transition">✕</button></div>' +
-      '<input type="text" placeholder="Phone number" value="' + s.phone + '" onchange="updatePhone(\'' + s.localId + '\', this.value)" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 mb-3 focus:outline-none focus:border-accent-600">' +
-      '<div class="flex gap-1.5 mb-3">' +
-        '<button onclick="toggleMethod(\'' + s.localId + '\', \'qr\')" class="flex-1 py-1.5 rounded text-xs font-medium transition ' + (s.method === 'qr' ? 'bg-accent-600 text-white' : 'bg-dark-600 text-gray-500') + '">QR</button>' +
-        '<button onclick="toggleMethod(\'' + s.localId + '\', \'code\')" class="flex-1 py-1.5 rounded text-xs font-medium transition ' + (s.method === 'code' ? 'bg-accent-600 text-white' : 'bg-dark-600 text-gray-500') + '">Code</button></div>' +
-      (s.method === 'qr' && s.qr ? '<div class="flex justify-center mb-3 bg-dark-700 rounded-lg p-2"><canvas id="qr-' + s.localId + '" width="180" height="180"></canvas></div>' : '') +
-      (s.method === 'code' && s.code ? '<div class="text-center mb-3 py-3 bg-dark-700 rounded-lg"><div class="text-2xl font-bold text-white tracking-widest">' + s.code + '</div><div class="text-xs text-gray-500 mt-1">Enter on phone</div></div>' : '') +
-      (s.error ? '<div class="text-xs text-red-400 mb-3">' + s.error + '</div>' : '') +
-      bottom + '</div>';
+    return '<div class="bg-dark-800 rounded-xl border border-dark-600 p-4"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-' + statusColor + '-500 ' + (s.status === 'waiting' || s.status === 'connecting' ? 'pulse-dot' : '') + '"></span><span class="text-xs text-gray-400">' + statusText + '</span></div><button onclick="removeSession(\'' + s.localId + '\')" class="text-gray-600 hover:text-red-400 text-xs transition">✕</button></div><input type="text" placeholder="Phone number" value="' + s.phone + '" onchange="updatePhone(\'' + s.localId + '\', this.value)" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 mb-3 focus:outline-none focus:border-accent-600"><div class="flex gap-1.5 mb-3"><button onclick="toggleMethod(\'' + s.localId + '\', \'qr\')" class="flex-1 py-1.5 rounded text-xs font-medium transition ' + (s.method === 'qr' ? 'bg-accent-600 text-white' : 'bg-dark-600 text-gray-500') + '">QR</button><button onclick="toggleMethod(\'' + s.localId + '\', \'code\')" class="flex-1 py-1.5 rounded text-xs font-medium transition ' + (s.method === 'code' ? 'bg-accent-600 text-white' : 'bg-dark-600 text-gray-500') + '">Code</button></div>' + (s.method === 'qr' && s.qr ? '<div class="flex justify-center mb-3 bg-dark-700 rounded-lg p-2"><canvas id="qr-' + s.localId + '" width="180" height="180"></canvas></div>' : '') + (s.method === 'code' && s.code ? '<div class="text-center mb-3 py-3 bg-dark-700 rounded-lg"><div class="text-2xl font-bold text-white tracking-widest">' + s.code + '</div><div class="text-xs text-gray-500 mt-1">Enter on phone</div></div>' : '') + (s.error ? '<div class="text-xs text-red-400 mb-3">' + s.error + '</div>' : '') + bottom + '</div>';
   }).join('');
   renderChecks(); updateExecBtn();
   sessions.forEach(s => { if (s.method === 'qr' && s.qr) drawQR(s.localId); });
@@ -256,11 +302,7 @@ function renderChecks() {
   const el = document.getElementById('session-checks');
   const linked = sessions.filter(s => s.status === 'linked');
   if (!linked.length) { el.innerHTML = '<span class="text-xs text-gray-600">Link sessions first</span>'; return; }
-  el.innerHTML = linked.map(s =>
-    '<label class="flex items-center gap-1.5 px-2.5 py-1.5 bg-dark-700 rounded-lg cursor-pointer">' +
-    '<input type="checkbox" ' + (s.selected ? 'checked' : '') + ' onchange="toggleSelect(\'' + s.localId + '\')" class="accent-accent-600">' +
-    '<span class="text-xs text-gray-300">' + (s.phone || s.id) + '</span></label>'
-  ).join('');
+  el.innerHTML = linked.map(s => '<label class="flex items-center gap-1.5 px-2.5 py-1.5 bg-dark-700 rounded-lg cursor-pointer"><input type="checkbox" ' + (s.selected ? 'checked' : '') + ' onchange="toggleSelect(\'' + s.localId + '\')" class="accent-accent-600"><span class="text-xs text-gray-300">' + (s.phone || s.id) + '</span></label>').join('');
 }
 
 function updatePhone(localId, val) { const s = sessions.find(x => x.localId === localId); if (s) s.phone = val; }
@@ -269,11 +311,8 @@ async function executeBan() {
   const linked = sessions.filter(s => s.status === 'linked' && s.selected);
   if (!linked.length) return;
   let target;
-  if (banType === 'number') {
-    let n = document.getElementById('target-number').value.replace(/\D/g, '');
-    if (n.startsWith('0')) n = n.substring(1);
-    target = n + '@s.whatsapp.net';
-  } else { if (!groupJid) { alert('Resolve group first'); return; } target = groupJid; }
+  if (banType === 'number') { let n = document.getElementById('target-number').value.replace(/\D/g, ''); if (n.startsWith('0')) n = n.substring(1); target = n + '@s.whatsapp.net'; }
+  else { if (!groupJid) { alert('Resolve group first'); return; } target = groupJid; }
   const btn = document.getElementById('btn-exec');
   btn.disabled = true; btn.textContent = 'RUNNING...';
   const resultsSection = document.getElementById('results-section');
@@ -294,10 +333,7 @@ async function executeBan() {
       div.innerHTML = '<div class="flex justify-between text-xs mb-2"><span class="text-gray-400">' + (s.phone || s.id) + '</span><span class="text-red-400">Failed</span></div><div class="w-full bg-dark-600 rounded-full h-1.5"><div class="bg-red-500 h-1.5 rounded-full" style="width:0%"></div></div>';
     }
   }
-  document.getElementById('results-summary').innerHTML =
-    '<div class="flex justify-between"><span class="text-gray-400">Total Reports</span><span class="text-white font-bold">' + (totalSent + totalFail) + '</span></div>' +
-    '<div class="flex justify-between mt-1"><span class="text-gray-400">Sent</span><span class="text-green-400">' + totalSent + '</span></div>' +
-    '<div class="flex justify-between mt-1"><span class="text-gray-400">Failed</span><span class="text-red-400">' + totalFail + '</span></div>';
+  document.getElementById('results-summary').innerHTML = '<div class="flex justify-between"><span class="text-gray-400">Total Reports</span><span class="text-white font-bold">' + (totalSent + totalFail) + '</span></div><div class="flex justify-between mt-1"><span class="text-gray-400">Sent</span><span class="text-green-400">' + totalSent + '</span></div><div class="flex justify-between mt-1"><span class="text-gray-400">Failed</span><span class="text-red-400">' + totalFail + '</span></div>';
   btn.disabled = false; btn.textContent = 'EXECUTE BAN';
 }
 
