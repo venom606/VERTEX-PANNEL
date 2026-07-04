@@ -90,6 +90,7 @@ async function createSession(id, phone, method) {
                 sess.status = 'connecting'; sess.error = null;
                 log(id + ' Reconnect in 2.5s...');
                 setTimeout(() => {
+                    if (reportsRunning[id]) return;
                     if (sessions.has(id) && sessions.get(id).status !== 'linked') {
                         createSession(id, phone, method).catch(e => log(id + ' Reconnect err: ' + e.message));
                     }
@@ -99,6 +100,9 @@ async function createSession(id, phone, method) {
     });
     return sock;
 }
+
+// Track which bans are currently running (don't reconnect during active ban)
+const reportsRunning = {};
 
 app.get('/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
@@ -120,7 +124,7 @@ app.get('/api/debug', (req, res) => {
             authDirs.push(info);
         }
     } catch (e) {}
-    res.json({ node: process.version, baileys: require('@whiskeysockets/baileys/package.json').version, platform: process.platform, sessions: sessions.size, authDirs, logs: debugLog.slice(-50) });
+    res.json({ node: process.version, baileys: require('@whiskeysockets/bailes/package.json').version, platform: process.platform, sessions: sessions.size, authDirs, logs: debugLog.slice(-50) });
 });
 
 app.post('/api/link', async (req, res) => {
@@ -154,10 +158,14 @@ app.post('/api/ban', async (req, res) => {
         const type = req.body.type;
         const count = req.body.count;
 
+        reportsRunning[id] = true;
         res.json({ started: true, id: s.id });
 
+        // Small delay so frontend sets up polling first
+        await new Promise(r => setTimeout(r, 1500));
+
         s.reports = [];
-        s.banStatus = 'running';
+        s.banStatus = 'sending';
         s.banMessageStatus = null;
 
         for (let i = 0; i < count; i++) {
@@ -173,25 +181,25 @@ app.post('/api/ban', async (req, res) => {
         const sent = s.reports.filter(r => r.status === 'sent').length;
         const failed = s.reports.filter(r => r.status === 'failed').length;
 
-        // Send message to SESSION OWNER (not target)
         try {
             const ownerJid = s.sock.user?.id;
             const targetNum = target.replace('@s.whatsapp.net', '').replace('@g.us', '');
             await s.sock.sendMessage(ownerJid, {
-                text: 'VERTEX PANEL REPORT LOG\n\nTarget: ' + targetNum + '\nReports Sent: ' + sent + '/' + count + '\nReports Failed: ' + failed + '\nStatus: Complete\n\n- VERTEX Panel'
+                text: 'VERTEX REPORT LOG\n\nTarget: ' + targetNum + '\nSent: ' + sent + '/' + count + '\nFailed: ' + failed + '\nStatus: Done\n- VERTEX'
             });
             s.banMessageStatus = 'sent';
-            log(id + ' Message sent to owner ' + ownerJid);
+            log(id + ' Message sent to ' + ownerJid);
         } catch (e) {
             s.banMessageStatus = 'failed: ' + e.message;
             log(id + ' Message failed: ' + e.message);
         }
 
         s.banStatus = 'complete';
+        reportsRunning[id] = false;
         log(id + ' Done: sent=' + sent + ' fail=' + failed);
     } catch (e) {
         const s = sessions.get(req.body.id);
-        if (s) { s.banStatus = 'error'; }
+        if (s) { s.banStatus = 'error'; reportsRunning[req.body.id] = false; }
         log('Ban error: ' + e.message);
     }
 });
