@@ -20,7 +20,6 @@ const DATA_DIR = path.join(__dirname, 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const sessions = new Map();
-let sid = 0;
 const debugLog = [];
 
 function log(msg) {
@@ -31,21 +30,27 @@ function log(msg) {
 }
 
 async function makeQRImage(data) {
-    try {
-        return await QRCode.toDataURL(data, { width: 250, margin: 1, color: { dark: '#ffffff', light: '#12121a' } });
-    } catch (e) { return null; }
+    try { return await QRCode.toDataURL(data, { width: 250, margin: 1, color: { dark: '#ffffff', light: '#12121a' } }); }
+    catch (e) { return null; }
 }
 
-// ---------------------------------------------------------------------------
-// EXACT pattern from working automation tool
-// ---------------------------------------------------------------------------
+function getNextId() {
+    const dirs = fs.readdirSync(DATA_DIR).filter(d => d.startsWith('auth_s_'));
+    let max = -1;
+    for (const d of dirs) {
+        const num = parseInt(d.replace('auth_s_', ''));
+        if (!isNaN(num) && num > max) max = num;
+    }
+    return 's_' + (max + 1);
+}
+
 async function createSession(id, phone, method) {
     const dir = path.join(DATA_DIR, 'auth_' + id);
     fs.mkdirSync(dir, { recursive: true });
 
     const { state, saveCreds } = await useMultiFileAuthState(dir);
     const { version } = await fetchLatestBaileysVersion();
-    log(id + ' Starting socket. Baileys ' + JSON.stringify(version));
+    log(id + ' Starting. Baileys ' + JSON.stringify(version));
 
     const sock = makeWASocket({
         version,
@@ -63,11 +68,10 @@ async function createSession(id, phone, method) {
 
     const sess = sessions.get(id);
     if (!sess) return;
+    sess.sock = sock;
 
-    // REAL saveCreds — exact same as working tool
     sock.ev.on('creds.update', saveCreds);
 
-    // Pairing code — exact same pattern as working tool
     if (method === 'code' && phone && !state.creds.registered) {
         const clean = String(phone).replace(/\D/g, '').replace(/^0+/, '');
         setTimeout(async () => {
@@ -75,7 +79,7 @@ async function createSession(id, phone, method) {
                 const code = await sock.requestPairingCode(clean);
                 sess.code = code.match(/.{1,4}/g)?.join('-') || code;
                 sess.status = 'waiting';
-                log(id + ' Pairing code: ' + sess.code);
+                log(id + ' Code: ' + sess.code);
             } catch (e) {
                 sess.status = 'error';
                 sess.error = 'Code failed: ' + e.message;
@@ -84,21 +88,19 @@ async function createSession(id, phone, method) {
         }, 3000);
     }
 
-    // Connection updates — EXACT same reconnect pattern as working tool
     sock.ev.on('connection.update', async (up) => {
         const { connection, lastDisconnect, qr } = up;
 
         if (qr) {
             sess.qrImage = await makeQRImage(qr);
             if (sess.status !== 'waiting') sess.status = 'waiting';
-            log(id + ' QR updated (len ' + qr.length + ', img=' + !!sess.qrImage + ')');
+            log(id + ' QR (len=' + qr.length + ' img=' + !!sess.qrImage + ')');
         }
 
         if (connection === 'open') {
             sess.status = 'linked';
-            sess.sock = sock;
             sess.error = null;
-            log(id + ' OPEN. Linked as ' + (sock.user?.id || 'unknown'));
+            log(id + ' OPEN as ' + (sock.user?.id || 'unknown'));
         }
 
         if (connection === 'close') {
@@ -111,27 +113,32 @@ async function createSession(id, phone, method) {
                 sess.error = 'Logged out from phone';
                 log(id + ' Wiping auth...');
                 try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+                sessions.delete(id);
             } else {
-                // EXACT same as working tool: auto-reconnect on 515/408/etc
                 sess.status = 'connecting';
                 sess.error = null;
-                log(id + ' Reconnecting in 2.5s...');
+                log(id + ' Reconnect in 2.5s...');
                 setTimeout(() => {
                     if (sessions.has(id) && sessions.get(id).status !== 'linked') {
-                        createSession(id, phone, method).catch(e => log(id + ' Reconnect error: ' + e.message));
+                        createSession(id, phone, method).catch(e => log(id + ' Reconnect err: ' + e.message));
                     }
                 }, 2500);
             }
         }
     });
 
-    sess.sock = sock;
     return sock;
 }
 
-// ---------------------------------------------------------------------------
-// API
-// ---------------------------------------------------------------------------
+// Return all sessions to frontend
+app.get('/api/sessions', (req, res) => {
+    const list = [];
+    for (const [id, s] of sessions) {
+        list.push({ id: s.id, phone: s.phone, status: s.status, code: s.code, qrImage: s.qrImage, error: s.error });
+    }
+    res.json(list);
+});
+
 app.get('/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
 app.get('/api/debug', (req, res) => {
@@ -140,41 +147,33 @@ app.get('/api/debug', (req, res) => {
         const dirs = fs.readdirSync(DATA_DIR).filter(d => d.startsWith('auth_'));
         for (const d of dirs) {
             const credFile = path.join(DATA_DIR, d, 'creds.json');
-            authDirs.push({ dir: d, hasCreds: fs.existsSync(credFile), registered: false });
+            const info = { dir: d, hasCreds: false, registered: false };
             if (fs.existsSync(credFile)) {
-                try {
-                    const c = JSON.parse(fs.readFileSync(credFile, 'utf8'));
-                    authDirs[authDirs.length - 1].registered = c.registered;
-                } catch (e) {}
+                info.hasCreds = true;
+                try { const c = JSON.parse(fs.readFileSync(credFile, 'utf8')); info.registered = c.registered; } catch (e) {}
             }
+            authDirs.push(info);
         }
     } catch (e) {}
-    res.json({
-        node: process.version,
-        baileys: require('@whiskeysockets/baileys/package.json').version,
-        platform: process.platform,
-        sessions: sessions.size,
-        authDirs: authDirs,
-        logs: debugLog.slice(-50)
-    });
+    res.json({ node: process.version, baileys: require('@whiskeysockets/baileys/package.json').version, platform: process.platform, sessions: sessions.size, authDirs, logs: debugLog.slice(-50) });
 });
 
 app.post('/api/link', async (req, res) => {
     try {
         const { phone, method } = req.body || {};
-        const id = 's_' + (sid++);
-        log('Link request: ' + id + ' method=' + (method || 'qr') + ' phone=' + (phone || 'none'));
+        const id = getNextId();
+        log('Link: ' + id + ' method=' + (method || 'qr') + ' phone=' + (phone || 'none'));
 
         const sess = { id, phone: phone || '', sock: null, qrImage: null, code: null, status: 'connecting', error: null };
         sessions.set(id, sess);
 
         await createSession(id, phone, method);
-
         await new Promise(r => setTimeout(r, method === 'code' ? 4500 : 3000));
+
         const s = sessions.get(id);
         res.json({ id: s.id, qrImage: s.qrImage, code: s.code, status: s.status, error: s.error });
     } catch (e) {
-        log('Link error: ' + e.message + '\n' + e.stack);
+        log('Link error: ' + e.message);
         res.status(500).json({ error: e.message });
     }
 });
@@ -191,10 +190,8 @@ app.post('/api/ban', async (req, res) => {
         if (!s || s.status !== 'linked' || !s.sock) return res.status(400).json({ error: 'Not linked' });
         let ok = 0, fail = 0;
         for (let i = 0; i < req.body.count; i++) {
-            try {
-                await s.sock.reportViolation(req.body.target, { reportType: 'other', reason: req.body.type === 'group' ? 'Inappropriate content' : 'Spam and scam' });
-                ok++;
-            } catch (e) { fail++; }
+            try { await s.sock.reportViolation(req.body.target, { reportType: 'other', reason: req.body.type === 'group' ? 'Inappropriate content' : 'Spam and scam' }); ok++; }
+            catch (e) { fail++; }
             await new Promise(r => setTimeout(r, 2500));
         }
         log('Ban: sent=' + ok + ' fail=' + fail);
@@ -219,8 +216,28 @@ app.delete('/api/session/:id', (req, res) => {
         const dir = path.join(DATA_DIR, 'auth_' + req.params.id);
         try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
         sessions.delete(req.params.id);
+        log('Deleted session ' + req.params.id);
     }
     res.json({ ok: true });
 });
 
-app.listen(PORT, () => log('Server started on port ' + PORT));
+// ---------------------------------------------------------------------------
+// STARTUP: auto-reconnect all existing sessions (same as working tool)
+// ---------------------------------------------------------------------------
+app.listen(PORT, () => {
+    log('Server started on port ' + PORT);
+
+    const dirs = fs.readdirSync(DATA_DIR).filter(d => d.startsWith('auth_s_'));
+    if (dirs.length > 0) {
+        log('Found ' + dirs.length + ' existing session(s), auto-reconnecting...');
+        for (const d of dirs) {
+            const id = d.replace('auth_', '');
+            const credFile = path.join(DATA_DIR, d, 'creds.json');
+            if (fs.existsSync(credFile)) {
+                const sess = { id, phone: '', sock: null, qrImage: null, code: null, status: 'connecting', error: null };
+                sessions.set(id, sess);
+                createSession(id, null, 'qr').catch(e => log(id + ' auto-reconnect err: ' + e.message));
+            }
+        }
+    }
+});
