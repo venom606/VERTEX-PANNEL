@@ -6,40 +6,24 @@
 <title>VERTEX PANEL</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
-tailwind.config = {
-  darkMode: 'class',
-  theme: { extend: { colors: {
-    dark: { 900: '#0a0a0f', 800: '#12121a', 700: '#1a1a25', 600: '#252530' },
-    accent: { 500: '#ef4444', 600: '#dc2626', 700: '#b91c1c' }
-  }}}
-}
+tailwind.config={darkMode:'class',theme:{extend:{colors:{dark:{900:'#0a0a0f',800:'#12121a',700:'#1a1a25',600:'#252530'},accent:{500:'#ef4444',600:'#dc2626',700:'#b91c1c'}}}}}
 </script>
 <style>
-  body { background: #0a0a0f; color: #e5e5e5; font-family: 'Segoe UI', system-ui, sans-serif; }
-  ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-track { background: #12121a; }
-  ::-webkit-scrollbar-thumb { background: #252530; border-radius: 3px; }
-  .glow { box-shadow: 0 0 20px rgba(239,68,68,0.15); }
-  .pulse-dot { animation: pulse 2s infinite; }
-  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
-  #debug-modal { display:none; }
-  #debug-modal.show { display:flex; }
+body{background:#0a0a0f;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-serif}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#12121a}::-webkit-scrollbar-thumb{background:#252530;border-radius:3px}
+.glow{box-shadow:0 0 20px rgba(239,68,68,0.15)}.pulse-dot{animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+#debug-modal{display:none}#debug-modal.show{display:flex}
 </style>
 </head>
 <body class="min-h-screen">
 <div class="max-w-6xl mx-auto p-4 md:p-6">
   <div class="flex items-center gap-3 mb-8">
     <div class="w-10 h-10 rounded-lg bg-accent-600 flex items-center justify-center text-white font-bold text-lg">V</div>
-    <div>
-      <h1 class="text-xl font-bold text-white">VERTEX PANEL</h1>
-      <p class="text-xs text-gray-500">v4.5</p>
-    </div>
+    <div><h1 class="text-xl font-bold text-white">VERTEX PANEL</h1><p class="text-xs text-gray-500">v4.6</p></div>
     <div class="ml-auto flex items-center gap-3">
       <button onclick="openDebug()" class="px-3 py-1.5 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs font-medium rounded-lg transition">Debug</button>
-      <div class="flex items-center gap-2">
-        <span class="w-2 h-2 rounded-full bg-green-500 pulse-dot"></span>
-        <span class="text-xs text-gray-400">Online</span>
-      </div>
+      <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-green-500 pulse-dot"></span><span class="text-xs text-gray-400">Online</span></div>
     </div>
   </div>
   <div class="mb-8">
@@ -48,7 +32,7 @@ tailwind.config = {
       <button onclick="addSession()" class="px-3 py-1.5 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">+ Add Session</button>
     </div>
     <div id="session-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      <div id="empty-sessions" class="col-span-full text-center py-12 text-gray-600 text-sm">No sessions. Click "+ Add Session" to start.</div>
+      <div id="empty-sessions" class="col-span-full text-center py-12 text-gray-600 text-sm">Loading sessions...</div>
     </div>
   </div>
   <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-8 glow">
@@ -79,9 +63,7 @@ tailwind.config = {
     </div>
     <div class="mb-5">
       <label class="block text-xs text-gray-500 mb-2">Use Sessions</label>
-      <div id="session-checks" class="flex flex-wrap gap-2">
-        <span class="text-xs text-gray-600">Link sessions first</span>
-      </div>
+      <div id="session-checks" class="flex flex-wrap gap-2"><span class="text-xs text-gray-600">Link sessions first</span></div>
     </div>
     <button onclick="executeBan()" id="btn-exec" class="w-full py-3 bg-accent-600 hover:bg-accent-700 disabled:bg-dark-600 disabled:text-gray-600 text-white font-semibold rounded-lg transition text-sm" disabled>EXECUTE BAN</button>
   </div>
@@ -122,19 +104,27 @@ async function refreshDebug(){
   try{
     const d=await apiGet('debug');
     let ai='';
-    if(d.authDirs&&d.authDirs.length){
-      ai='<br><span class="text-gray-500 mt-1 block">Auth:</span> '+d.authDirs.map(a=>'<span class="'+(a.hasCreds?'text-green-400':'text-gray-500')+'">'+a.dir+(a.hasCreds?' ('+(a.registered?'reg':'unreg')+')':' (empty)')+'</span>').join(' ');
-    }
+    if(d.authDirs&&d.authDirs.length)ai='<br><span class="text-gray-500 mt-1 block">Auth:</span> '+d.authDirs.map(a=>'<span class="'+(a.hasCreds?'text-green-400':'text-gray-500')+'">'+a.dir+(a.hasCreds?' ('+(a.registered?'reg':'unreg')+')':' (empty)')+'</span>').join(' ');
     document.getElementById('debug-info').innerHTML='<span class="text-gray-500">Node:</span> <span class="text-white">'+d.node+'</span> <span class="text-gray-500">Baileys:</span> <span class="text-white">'+d.baileys+'</span> <span class="text-gray-500">Sessions:</span> <span class="text-white">'+d.sessions+'</span>'+ai;
-    document.getElementById('debug-logs').innerHTML=d.logs.map(l=>{
-      let c='text-gray-400';
-      if(l.msg.includes('CLOSED')||l.msg.includes('error')||l.msg.includes('Error')||l.msg.includes('FATAL'))c='text-red-400';
-      else if(l.msg.includes('QR')||l.msg.includes('OPEN')||l.msg.includes('img=true'))c='text-green-400';
-      else if(l.msg.includes('Reconnect'))c='text-yellow-400';
-      return '<div class="'+c+'">['+l.time.split('T')[1].split('.')[0]+'] '+l.msg+'</div>';
-    }).join('');
+    document.getElementById('debug-logs').innerHTML=d.logs.map(l=>{let c='text-gray-400';if(l.msg.includes('CLOSED')||l.msg.includes('error')||l.msg.includes('Error')||l.msg.includes('FATAL'))c='text-red-400';else if(l.msg.includes('QR')||l.msg.includes('OPEN')||l.msg.includes('img=true'))c='text-green-400';else if(l.msg.includes('Reconnect'))c='text-yellow-400';return'<div class="'+c+'">['+l.time.split('T')[1].split('.')[0]+'] '+l.msg+'</div>'}).join('');
     document.getElementById('debug-logs').scrollTop=99999;
   }catch(e){document.getElementById('debug-logs').innerHTML='<div class="text-red-400">'+e.message+'</div>'}
+}
+
+// Load existing sessions from server on page open
+async function loadExistingSessions(){
+  try{
+    const list=await apiGet('sessions');
+    if(!list.length)return;
+    for(const s of list){
+      const lid='loaded_'+s.id;
+      sessions.push({id:s.id,localId:lid,phone:s.phone,method:'qr',qrImage:s.qrImage,code:s.code,status:s.status,error:s.error,selected:true});
+      if(s.status!=='linked'){
+        pollingIntervals[lid]=setInterval(()=>pollSession(lid),2000);
+      }
+    }
+    renderSessions();
+  }catch(e){}
 }
 
 function addSession(){
@@ -217,18 +207,15 @@ function renderSessions(){
     if(s.status==='linked')bot='<div class="flex items-center gap-2"><input type="checkbox" '+(s.selected?'checked':'')+' onchange="toggleSelect(\''+s.localId+'\')" class="accent-accent-600"><span class="text-xs text-gray-400">Use for ban</span></div>';
     else if(s.status==='error')bot='<button onclick="linkSession(\''+s.localId+'\')" class="w-full py-2 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">Retry</button>';
     else bot='<button onclick="linkSession(\''+s.localId+'\')" class="w-full py-2 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">Link</button>';
-    let qrH=s.method==='qr'&&s.qrImage?'<div class="flex justify-center mb-3 bg-dark-700 rounded-lg p-3"><img src="'+s.qrImage+'" style="width:180px;border-radius:8px;"></div>':s.method==='qr'&&s.status==='connecting'?'<div class="flex justify-center mb-3 py-6 text-gray-500 text-xs">Generating QR...</div>':'';
+    let qrH=s.method==='qr'&&s.qrImage?'<div class="flex justify-center mb-3 bg-dark-700 rounded-lg p-3"><img src="'+s.qrImage+'" style="width:180px;border-radius:8px;"></div>':s.method==='qr'&&(s.status==='connecting'||s.status==='waiting')?'<div class="flex justify-center mb-3 py-6 text-gray-500 text-xs">Connecting to WhatsApp...</div>':'';
     let codeH=s.method==='code'&&s.code?'<div class="text-center mb-3 py-3 bg-dark-700 rounded-lg"><div class="text-2xl font-bold text-white tracking-widest">'+s.code+'</div><div class="text-xs text-gray-500 mt-1">Enter on phone</div></div>':'';
-    return '<div class="bg-dark-800 rounded-xl border border-dark-600 p-4"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-'+sc+'-500 '+(s.status==='waiting'||s.status==='connecting'?'pulse-dot':'')+'"></span><span class="text-xs text-gray-400">'+st+'</span></div><button onclick="removeSession(\''+s.localId+'\')" class="text-gray-600 hover:text-red-400 text-xs transition">X</button></div>'+(s.method==='code'?'<input type="text" placeholder="Phone number" value="'+s.phone+'" onchange="updatePhone(\''+s.localId+'\',this.value)" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 mb-3 focus:outline-none focus:border-accent-600">':'')+'<div class="flex gap-1.5 mb-3"><button onclick="toggleMethod(\''+s.localId+'\',\'qr\')" class="flex-1 py-1.5 rounded text-xs font-medium transition '+(s.method==='qr'?'bg-accent-600 text-white':'bg-dark-600 text-gray-500')+'">QR</button><button onclick="toggleMethod(\''+s.localId+'\',\'code\')" class="flex-1 py-1.5 rounded text-xs font-medium transition '+(s.method==='code'?'bg-accent-600 text-white':'bg-dark-600 text-gray-500')+'">Code</button></div>'+qrH+codeH+(s.error?'<div class="text-xs text-red-400 mb-3">'+s.error+'</div>':'')+bot+'</div>';
+    let persistTag=s.localId.startsWith('loaded_')?'<div class="text-xs text-green-500/50 mb-2">Persistent</div>':'';
+    return'<div class="bg-dark-800 rounded-xl border border-dark-600 p-4"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-'+sc+'-500 '+(s.status==='waiting'||s.status==='connecting'?'pulse-dot':'')+'"></span><span class="text-xs text-gray-400">'+st+'</span></div><button onclick="removeSession(\''+s.localId+'\')" class="text-gray-600 hover:text-red-400 text-xs transition">X</button></div>'+persistTag+(s.method==='code'?'<input type="text" placeholder="Phone number" value="'+s.phone+'" onchange="updatePhone(\''+s.localId+'\',this.value)" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 mb-3 focus:outline-none focus:border-accent-600">':'')+'<div class="flex gap-1.5 mb-3"><button onclick="toggleMethod(\''+s.localId+'\',\'qr\')" class="flex-1 py-1.5 rounded text-xs font-medium transition '+(s.method==='qr'?'bg-accent-600 text-white':'bg-dark-600 text-gray-500')+'">QR</button><button onclick="toggleMethod(\''+s.localId+'\',\'code\')" class="flex-1 py-1.5 rounded text-xs font-medium transition '+(s.method==='code'?'bg-accent-600 text-white':'bg-dark-600 text-gray-500')+'">Code</button></div>'+qrH+codeH+(s.error?'<div class="text-xs text-red-400 mb-3">'+s.error+'</div>':'')+bot+'</div>';
   }).join('');
   renderChecks();updateExecBtn();
 }
 
-function createEmpty(){
-  const d=document.createElement('div');d.id='empty-sessions';
-  d.className='col-span-full text-center py-12 text-gray-600 text-sm';
-  d.textContent='No sessions. Click "+ Add Session" to start.';return d;
-}
+function createEmpty(){const d=document.createElement('div');d.id='empty-sessions';d.className='col-span-full text-center py-12 text-gray-600 text-sm';d.textContent='No sessions. Click "+ Add Session" to start.';return d}
 
 function renderChecks(){
   const el=document.getElementById('session-checks');
@@ -260,7 +247,8 @@ async function executeBan(){
   btn.disabled=false;btn.textContent='EXECUTE BAN';
 }
 
-renderSessions();
+// Load existing sessions on page open, then render
+loadExistingSessions();
 </script>
 </body>
 </html>
