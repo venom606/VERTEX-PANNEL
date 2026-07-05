@@ -199,27 +199,28 @@ app.post('/api/ban', async (req, res) => {
             s.reports.push({ i: i + 1, status: 'sending' });
 
             try {
-                // FIXED: Use raw IQ query instead of non-existent reportViolation method
                 const reportType = type === 'group' ? 'inappropriate' : 'spam';
-                await Promise.race([
-                    s.sock.query({
-                        tag: 'iq',
+                
+                // FIXED: Use sendNode instead of query to avoid IQ timeout
+                await s.sock.sendNode({
+                    tag: 'iq',
+                    attrs: {
+                        to: 's.whatsapp.net',
+                        type: 'set',
+                        id: 'report-' + banId + '-' + Date.now() + '-' + i
+                    },
+                    content: [{
+                        tag: 'report',
                         attrs: {
-                            to: 's.whatsapp.net',
-                            type: 'set',
-                            id: 'report-' + banId + '-' + Date.now() + '-' + i
-                        },
-                        content: [{
-                            tag: 'report',
-                            attrs: {
-                                xmlns: 'urn:xmpp:whatsapp:report',
-                                jid: target,
-                                type: reportType
-                            }
-                        }]
-                    }),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('IQ timeout')), 15000))
-                ]);
+                            xmlns: 'urn:xmpp:whatsapp:report',
+                            jid: target,
+                            type: reportType
+                        }
+                    }]
+                });
+
+                // Small delay to let server process
+                await new Promise(r => setTimeout(r, 800));
 
                 s.reports[i].status = 'sent';
                 log(banId + ' [' + (i + 1) + '/' + count + '] SENT');
@@ -230,7 +231,7 @@ app.post('/api/ban', async (req, res) => {
             }
 
             if (i < count - 1) {
-                const delay = 2000 + Math.floor(Math.random() * 2000);
+                const delay = 2500 + Math.floor(Math.random() * 2500);
                 await new Promise(r => setTimeout(r, delay));
             }
         }
