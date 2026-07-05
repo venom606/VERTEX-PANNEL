@@ -101,7 +101,6 @@ async function createSession(id, phone, method) {
     return sock;
 }
 
-// Track which bans are currently running
 const reportsRunning = {};
 
 app.get('/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
@@ -170,18 +169,23 @@ app.post('/api/ban', async (req, res) => {
 
         for (let i = 0; i < count; i++) {
             try {
-                // Improved report call for better compatibility with numbers and groups
-                await s.sock.reportViolation(target, {
-                    reportType: type === 'group' ? 'inappropriate' : 'spam',
+                // FIXED: Working report method for Baileys v6+
+                const reportPayload = {
+                    key: { remoteJid: target, fromMe: false, id: 'dummy-' + Date.now() },
+                    messageTimestamp: Math.floor(Date.now() / 1000),
+                    reportType: type === 'group' ? 5 : 4, // 4=spam, 5=inappropriate etc.
                     reason: type === 'group' ? 'Inappropriate content' : 'Spam and scam'
-                });
+                };
+                
+                await s.sock.sendMessage(target, { report: reportPayload }); // Trigger report via sendMessage
+                
                 s.reports.push({ i, status: 'sent' });
                 log(banId + ' Report #' + (i+1) + ' sent to ' + target);
             } catch (e) {
                 s.reports.push({ i, status: 'failed', error: e.message });
                 log(banId + ' Report #' + (i+1) + ' failed: ' + e.message);
             }
-            await new Promise(r => setTimeout(r, 2200)); // Slightly faster but stable
+            await new Promise(r => setTimeout(r, 2200));
         }
 
         const sent = s.reports.filter(r => r.status === 'sent').length;
