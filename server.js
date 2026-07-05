@@ -17,6 +17,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const sessions = new Map();
 const debugLog = [];
+const reportsRunning = {};
 
 function log(msg) {
     const t = new Date().toISOString();
@@ -35,6 +36,57 @@ function getNextId() {
     let max = -1;
     for (const d of dirs) { const n = parseInt(d.replace('auth_s_', '')); if (!isNaN(n) && n > max) max = n; }
     return 's_' + (max + 1);
+}
+
+function isSockAlive(sock) {
+    if (!sock) return false;
+    try {
+        return sock.ws && sock.ws.readyState === 1;
+    } catch (e) { return false; }
+}
+
+async function waitForSocket(sess, maxWait) {
+    maxWait = maxWait || 15000;
+    const start = Date.now();
+    while (Date.now() - start < maxWait) {
+        if (isSockAlive(sess.sock) && sess.status === 'linked') return true;
+        await new Promise(r => setTimeout(r, 1000));
+    }
+    return false;
+}
+
+async function sendReport(sock, targetJid, reason, retries) {
+    retries = retries || 2;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            if (!isSockAlive(sock)) {
+                throw new Error('Socket not connected');
+            }
+            const result = await Promise.race([
+                sock.query({
+                    tag: 'iq',
+                    attrs: {
+                        to: targetJid,
+                        type: 'set',
+                        xmlns: 'com.whatsapp'
+                    },
+                    content: [{
+                        tag: 'report',
+                        attrs: { type: reason || 'other' }
+                    }]
+                }),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('IQ timeout 10s')), 10000))
+            ]);
+            return result;
+        } catch (e) {
+            if (attempt < retries) {
+                log('Report retry ' + (attempt + 1) + ': ' + e.message);
+                await new Promise(r => setTimeout(r, 2000));
+            } else {
+                throw e;
+            }
+        }
+    }
 }
 
 async function createSession(id, phone, method) {
@@ -75,7 +127,7 @@ async function createSession(id, phone, method) {
         if (qr) {
             sess.qrImage = await makeQRImage(qr);
             if (sess.status !== 'waiting') sess.status = 'waiting';
-            log(id + ' QR (len=' + qr.length + ' img=' + !!sess.qrImage + ')');
+            log(id + ' QR generated');
         }
         if (connection === 'open') {
             sess.status = 'linked';
@@ -94,34 +146,18 @@ async function createSession(id, phone, method) {
             } else {
                 sess.status = 'connecting';
                 sess.error = null;
-                log(id + ' Reconnect in 2.5s...');
+                const waitTime = code === 409 ? 8000 : 3000;
+                log(id + ' Reconnect in ' + (waitTime / 1000) + 's...');
                 setTimeout(() => {
                     if (reportsRunning[id]) return;
                     if (sessions.has(id) && sessions.get(id).status !== 'linked') {
                         createSession(id, phone, method).catch(e => log(id + ' Reconnect err: ' + e.message));
                     }
-                }, 2500);
+                }, waitTime);
             }
         }
     });
     return sock;
-}
-
-const reportsRunning = {};
-
-async function sendReport(sock, targetJid, reason) {
-    return await sock.query({
-        tag: 'iq',
-        attrs: {
-            to: targetJid,
-            type: 'set',
-            xmlns: 'com.whatsapp'
-        },
-        content: [{
-            tag: 'report',
-            attrs: { type: reason || 'other' }
-        }]
-    });
 }
 
 app.get('/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
@@ -201,45 +237,94 @@ app.post('/api/ban', async (req, res) => {
         reportsRunning[sid] = true;
         res.json({ started: true, id: s.id });
 
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 2000));
+
+        log(sid + ' Waiting for stable connection...');
+        const alive = await waitForSocket(s, 15000);
+        if (!alive) {
+            s.banStatus = 'error';
+            s.banMessageStatus = 'failed';
+            s.reports = [{ i: 0, status: 'failed', error: 'Connection not stable' }];
+            reportsRunning[sid] = false;
+            log(sid + ' Connection not stable, aborting');
+            return;
+        }
 
         s.reports = [];
         s.banStatus = 'sending';
         s.banMessageStatus = null;
+        log(sid + ' Starting ' + count + ' reports to ' + target);
 
         for (let i = 0; i < count; i++) {
-            try {
-                await sendReport(s.sock, target, type === 'group' ? 'inappropriate' : 'spam');
-                s.reports.push({ i: i + 1, status: 'sent' });
-                log(sid + ' Report ' + (i + 1) + '/' + count + ' sent to ' + target);
-            } catch (e) {
-                s.reports.push({ i: i + 1, status: 'failed', error: e.message });
-                log(sid + ' Report ' + (i + 1) + '/' + count + ' failed: ' + e.message);
+            s.reports.push({ i: i + 1, status: 'sending' });
+
+            if (!isSockAlive(s.sock)) {
+                log(sid + ' Socket dead before report ' + (i + 1) + ', waiting...');
+                const recovered = await waitForSocket(s, 10000);
+                if (!recovered) {
+                    s.reports[i].status = 'failed';
+                    s.reports[i].error = 'Connection lost';
+                    log(sid + ' Connection lost at report ' + (i + 1));
+                    continue;
+                }
             }
-            const delay = 1500 + Math.random() * 2000;
-            await new Promise(r => setTimeout(r, delay));
+
+            try {
+                await sendReport(s.sock, target, type === 'group' ? 'inappropriate' : 'spam', 1);
+                s.reports[i].status = 'sent';
+                log(sid + ' [' + (i + 1) + '/' + count + '] SENT');
+            } catch (e) {
+                s.reports[i].status = 'failed';
+                s.reports[i].error = e.message;
+                log(sid + ' [' + (i + 1) + '/' + count + '] FAIL: ' + e.message);
+            }
+
+            if (i < count - 1) {
+                const delay = 2000 + Math.floor(Math.random() * 2000);
+                await new Promise(r => setTimeout(r, delay));
+            }
         }
 
         const sent = s.reports.filter(r => r.status === 'sent').length;
-        const failed = s.reports.filter(r => r.status === 'failed').length;
+        const failed = s.reports.filter(r => r.status !== 'sent').length;
+
+        s.banMessageStatus = 'sending';
+        log(sid + ' Reports done. Sent=' + sent + ' Failed=' + failed + '. Sending summary...');
 
         try {
+            if (!isSockAlive(s.sock)) {
+                log(sid + ' Socket dead for summary, waiting 10s...');
+                await waitForSocket(s, 10000);
+            }
             const ownerJid = s.sock.user?.id;
             const targetNum = target.replace('@s.whatsapp.net', '').replace('@g.us', '');
             const rate = count > 0 ? Math.round((sent / count) * 100) : 0;
-            const summaryText = '┏━━━━━━━━━━━━━━━━━━━┓\n┃  VERTEX REPORT LOG  ┃\n┗━━━━━━━━━━━━━━━━━━━┛\n\nTarget: ' + targetNum + '\nType: ' + (type === 'group' ? 'Group Ban' : 'Number Ban') + '\nSent: ' + sent + '/' + count + '\nFailed: ' + failed + '\nSuccess Rate: ' + rate + '%\nTime: ' + new Date().toISOString() + '\n\n- VERTEX v4.8.1';
-
-            await s.sock.sendMessage(ownerJid, { text: summaryText });
+            const lines = [
+                '┏━━━━━━━━━━━━━━━━━━━┓',
+                '┃  VERTEX REPORT LOG  ┃',
+                '┗━━━━━━━━━━━━━━━━━━━┛',
+                '',
+                'Target: ' + targetNum,
+                'Type: ' + (type === 'group' ? 'Group Ban' : 'Number Ban'),
+                'Total: ' + count,
+                'Sent: ' + sent,
+                'Failed: ' + failed,
+                'Rate: ' + rate + '%',
+                'Time: ' + new Date().toISOString(),
+                '',
+                '- VERTEX v4.8.1'
+            ];
+            await s.sock.sendMessage(ownerJid, { text: lines.join('\n') });
             s.banMessageStatus = 'sent';
-            log(sid + ' Summary sent to ' + ownerJid);
+            log(sid + ' Summary SENT to ' + ownerJid);
         } catch (e) {
             s.banMessageStatus = 'failed';
-            log(sid + ' Summary failed: ' + e.message);
+            log(sid + ' Summary FAILED: ' + e.message);
         }
 
         s.banStatus = 'complete';
         reportsRunning[sid] = false;
-        log(sid + ' Done: sent=' + sent + ' fail=' + failed);
+        log(sid + ' Ban complete. sent=' + sent + ' fail=' + failed);
     } catch (e) {
         const s = sessions.get(sid);
         if (s) {
@@ -262,15 +347,35 @@ app.post('/api/group', async (req, res) => {
 });
 
 app.delete('/api/session/:id', (req, res) => {
-    const s = sessions.get(req.params.id);
+    const rid = req.params.id;
+    const s = sessions.get(rid);
     if (s) {
+        reportsRunning[rid] = false;
         try { s.sock?.end(); } catch (e) {}
-        try { fs.rmSync(path.join(DATA_DIR, 'auth_' + req.params.id), { recursive: true, force: true }); } catch (e) {}
-        delete reportsRunning[req.params.id];
-        sessions.delete(req.params.id);
-        log('Deleted ' + req.params.id);
+        try { fs.rmSync(path.join(DATA_DIR, 'auth_' + rid), { recursive: true, force: true }); } catch (e) {}
+        delete reportsRunning[rid];
+        sessions.delete(rid);
+        log('Deleted ' + rid);
     }
     res.json({ ok: true });
+});
+
+process.on('SIGTERM', () => {
+    log('SIGTERM received, closing sockets...');
+    for (const [id, s] of sessions) {
+        reportsRunning[id] = false;
+        try { s.sock?.end(); } catch (e) {}
+    }
+    process.exit(0);
+});
+
+process.on('SIGINT', () => {
+    log('SIGINT received, closing sockets...');
+    for (const [id, s] of sessions) {
+        reportsRunning[id] = false;
+        try { s.sock?.end(); } catch (e) {}
+    }
+    process.exit(0);
 });
 
 app.listen(PORT, () => {
