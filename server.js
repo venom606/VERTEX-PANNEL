@@ -17,7 +17,6 @@ const DATA_DIR = path.join(__dirname, 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const sessions = new Map();
 const debugLog = [];
-const reportsRunning = {};
 
 function log(msg) {
     const t = new Date().toISOString();
@@ -36,57 +35,6 @@ function getNextId() {
     let max = -1;
     for (const d of dirs) { const n = parseInt(d.replace('auth_s_', '')); if (!isNaN(n) && n > max) max = n; }
     return 's_' + (max + 1);
-}
-
-function isSockAlive(sock) {
-    if (!sock) return false;
-    try {
-        return sock.ws && sock.ws.readyState === 1;
-    } catch (e) { return false; }
-}
-
-async function waitForSocket(sess, maxWait) {
-    maxWait = maxWait || 15000;
-    const start = Date.now();
-    while (Date.now() - start < maxWait) {
-        if (isSockAlive(sess.sock) && sess.status === 'linked') return true;
-        await new Promise(r => setTimeout(r, 1000));
-    }
-    return false;
-}
-
-async function sendReport(sock, targetJid, reason, retries) {
-    retries = retries || 2;
-    for (let attempt = 0; attempt <= retries; attempt++) {
-        try {
-            if (!isSockAlive(sock)) {
-                throw new Error('Socket not connected');
-            }
-            const result = await Promise.race([
-                sock.query({
-                    tag: 'iq',
-                    attrs: {
-                        to: targetJid,
-                        type: 'set',
-                        xmlns: 'com.whatsapp'
-                    },
-                    content: [{
-                        tag: 'report',
-                        attrs: { type: reason || 'other' }
-                    }]
-                }),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('IQ timeout 10s')), 10000))
-            ]);
-            return result;
-        } catch (e) {
-            if (attempt < retries) {
-                log('Report retry ' + (attempt + 1) + ': ' + e.message);
-                await new Promise(r => setTimeout(r, 2000));
-            } else {
-                throw e;
-            }
-        }
-    }
 }
 
 async function createSession(id, phone, method) {
@@ -127,50 +75,41 @@ async function createSession(id, phone, method) {
         if (qr) {
             sess.qrImage = await makeQRImage(qr);
             if (sess.status !== 'waiting') sess.status = 'waiting';
-            log(id + ' QR generated');
+            log(id + ' QR (len=' + qr.length + ' img=' + !!sess.qrImage + ')');
         }
-        if (connection === 'open') {
-            sess.status = 'linked';
-            sess.error = null;
-            log(id + ' OPEN as ' + (sock.user?.id || 'unknown'));
-        }
+        if (connection === 'open') { sess.status = 'linked'; sess.error = null; log(id + ' OPEN as ' + (sock.user?.id || 'unknown')); }
         if (connection === 'close') {
             const code = lastDisconnect?.error?.output?.statusCode;
             const msg = lastDisconnect?.error?.message || '';
             log(id + ' CLOSED code=' + code + ' msg=' + msg);
             if (code === DisconnectReason.loggedOut) {
-                sess.status = 'error';
-                sess.error = 'Logged out from phone';
+                sess.status = 'error'; sess.error = 'Logged out from phone';
                 try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
                 sessions.delete(id);
             } else {
-                sess.status = 'connecting';
-                sess.error = null;
-                const waitTime = code === 409 ? 8000 : 3000;
-                log(id + ' Reconnect in ' + (waitTime / 1000) + 's...');
+                sess.status = 'connecting'; sess.error = null;
+                log(id + ' Reconnect in 2.5s...');
                 setTimeout(() => {
                     if (reportsRunning[id]) return;
                     if (sessions.has(id) && sessions.get(id).status !== 'linked') {
                         createSession(id, phone, method).catch(e => log(id + ' Reconnect err: ' + e.message));
                     }
-                }, waitTime);
+                }, 2500);
             }
         }
     });
     return sock;
 }
 
+// Track which bans are currently running
+const reportsRunning = {};
+
 app.get('/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
 app.get('/api/sessions', (req, res) => {
     const list = [];
     for (const [id, s] of sessions) {
-        list.push({
-            id: s.id, phone: s.phone, status: s.status, code: s.code,
-            qrImage: s.qrImage, error: s.error,
-            reports: s.reports, banStatus: s.banStatus,
-            banMessageStatus: s.banMessageStatus
-        });
+        list.push({ id: s.id, phone: s.phone, status: s.status, code: s.code, qrImage: s.qrImage, error: s.error });
     }
     res.json(list);
 });
@@ -181,19 +120,11 @@ app.get('/api/debug', (req, res) => {
         for (const d of fs.readdirSync(DATA_DIR).filter(d => d.startsWith('auth_'))) {
             const cf = path.join(DATA_DIR, d, 'creds.json');
             const info = { dir: d, hasCreds: false, registered: false };
-            if (fs.existsSync(cf)) {
-                info.hasCreds = true;
-                try { info.registered = JSON.parse(fs.readFileSync(cf, 'utf8')).registered; } catch (e) {}
-            }
+            if (fs.existsSync(cf)) { info.hasCreds = true; try { info.registered = JSON.parse(fs.readFileSync(cf, 'utf8')).registered; } catch (e) {} }
             authDirs.push(info);
         }
     } catch (e) {}
-    res.json({
-        node: process.version,
-        baileys: require('@whiskeysockets/baileys/package.json').version,
-        platform: process.platform, sessions: sessions.size,
-        authDirs, logs: debugLog.slice(-50)
-    });
+    res.json({ node: process.version, baileys: require('@whiskeysockets/baileys/package.json').version, platform: process.platform, sessions: sessions.size, authDirs, logs: debugLog.slice(-50) });
 });
 
 app.post('/api/link', async (req, res) => {
@@ -201,11 +132,7 @@ app.post('/api/link', async (req, res) => {
         const { phone, method } = req.body || {};
         const id = getNextId();
         log('Link: ' + id + ' method=' + (method || 'qr') + ' phone=' + (phone || 'none'));
-        const sess = {
-            id, phone: phone || '', sock: null, qrImage: null, code: null,
-            status: 'connecting', error: null, reports: null,
-            banStatus: null, banMessageStatus: null
-        };
+        const sess = { id, phone: phone || '', sock: null, qrImage: null, code: null, status: 'connecting', error: null, reports: null, banStatus: null, banMessageStatus: null };
         sessions.set(id, sess);
         await createSession(id, phone, method);
         await new Promise(r => setTimeout(r, method === 'code' ? 4500 : 3000));
@@ -218,121 +145,71 @@ app.post('/api/check', (req, res) => {
     const s = sessions.get(req.body.id);
     if (!s) return res.status(404).json({ error: 'Not found' });
     res.json({
-        id: s.id, status: s.status, phone: s.phone, code: s.code,
-        qrImage: s.qrImage, error: s.error,
-        reports: s.reports, banStatus: s.banStatus,
-        banMessageStatus: s.banMessageStatus
+        id: s.id, status: s.status, phone: s.phone, code: s.code, qrImage: s.qrImage, error: s.error,
+        reports: s.reports, banStatus: s.banStatus, banMessageStatus: s.banMessageStatus
     });
 });
 
 app.post('/api/ban', async (req, res) => {
-    const sid = req.body.id;
     try {
-        const s = sessions.get(sid);
+        const banId = req.body.id;
+        const s = sessions.get(banId);
         if (!s || s.status !== 'linked' || !s.sock) return res.status(400).json({ error: 'Not linked' });
         const target = req.body.target;
         const type = req.body.type;
-        const count = req.body.count;
+        const count = req.body.count || 5;
 
-        reportsRunning[sid] = true;
+        reportsRunning[banId] = true;
         res.json({ started: true, id: s.id });
 
-        await new Promise(r => setTimeout(r, 2000));
-
-        log(sid + ' Waiting for stable connection...');
-        const alive = await waitForSocket(s, 15000);
-        if (!alive) {
-            s.banStatus = 'error';
-            s.banMessageStatus = 'failed';
-            s.reports = [{ i: 0, status: 'failed', error: 'Connection not stable' }];
-            reportsRunning[sid] = false;
-            log(sid + ' Connection not stable, aborting');
-            return;
-        }
+        await new Promise(r => setTimeout(r, 1500));
 
         s.reports = [];
         s.banStatus = 'sending';
         s.banMessageStatus = null;
-        log(sid + ' Starting ' + count + ' reports to ' + target);
 
         for (let i = 0; i < count; i++) {
-            s.reports.push({ i: i + 1, status: 'sending' });
-
-            if (!isSockAlive(s.sock)) {
-                log(sid + ' Socket dead before report ' + (i + 1) + ', waiting...');
-                const recovered = await waitForSocket(s, 10000);
-                if (!recovered) {
-                    s.reports[i].status = 'failed';
-                    s.reports[i].error = 'Connection lost';
-                    log(sid + ' Connection lost at report ' + (i + 1));
-                    continue;
-                }
-            }
-
             try {
-                await sendReport(s.sock, target, type === 'group' ? 'inappropriate' : 'spam', 1);
-                s.reports[i].status = 'sent';
-                log(sid + ' [' + (i + 1) + '/' + count + '] SENT');
+                // Improved report call for better compatibility with numbers and groups
+                await s.sock.reportViolation(target, {
+                    reportType: type === 'group' ? 'inappropriate' : 'spam',
+                    reason: type === 'group' ? 'Inappropriate content' : 'Spam and scam'
+                });
+                s.reports.push({ i, status: 'sent' });
+                log(banId + ' Report #' + (i+1) + ' sent to ' + target);
             } catch (e) {
-                s.reports[i].status = 'failed';
-                s.reports[i].error = e.message;
-                log(sid + ' [' + (i + 1) + '/' + count + '] FAIL: ' + e.message);
+                s.reports.push({ i, status: 'failed', error: e.message });
+                log(banId + ' Report #' + (i+1) + ' failed: ' + e.message);
             }
-
-            if (i < count - 1) {
-                const delay = 2000 + Math.floor(Math.random() * 2000);
-                await new Promise(r => setTimeout(r, delay));
-            }
+            await new Promise(r => setTimeout(r, 2200)); // Slightly faster but stable
         }
 
         const sent = s.reports.filter(r => r.status === 'sent').length;
-        const failed = s.reports.filter(r => r.status !== 'sent').length;
-
-        s.banMessageStatus = 'sending';
-        log(sid + ' Reports done. Sent=' + sent + ' Failed=' + failed + '. Sending summary...');
+        const failed = s.reports.filter(r => r.status === 'failed').length;
 
         try {
-            if (!isSockAlive(s.sock)) {
-                log(sid + ' Socket dead for summary, waiting 10s...');
-                await waitForSocket(s, 10000);
-            }
             const ownerJid = s.sock.user?.id;
             const targetNum = target.replace('@s.whatsapp.net', '').replace('@g.us', '');
-            const rate = count > 0 ? Math.round((sent / count) * 100) : 0;
-            const lines = [
-                '┏━━━━━━━━━━━━━━━━━━━┓',
-                '┃  VERTEX REPORT LOG  ┃',
-                '┗━━━━━━━━━━━━━━━━━━━┛',
-                '',
-                'Target: ' + targetNum,
-                'Type: ' + (type === 'group' ? 'Group Ban' : 'Number Ban'),
-                'Total: ' + count,
-                'Sent: ' + sent,
-                'Failed: ' + failed,
-                'Rate: ' + rate + '%',
-                'Time: ' + new Date().toISOString(),
-                '',
-                '- VERTEX v4.8.1'
-            ];
-            await s.sock.sendMessage(ownerJid, { text: lines.join('\n') });
+            await s.sock.sendMessage(ownerJid, {
+                text: 'VERTEX REPORT LOG\n\nTarget: ' + targetNum + '\nSent: ' + sent + '/' + count + '\nFailed: ' + failed + '\nStatus: Done\n- VERTEX'
+            });
             s.banMessageStatus = 'sent';
-            log(sid + ' Summary SENT to ' + ownerJid);
+            log(banId + ' Message sent to owner');
         } catch (e) {
-            s.banMessageStatus = 'failed';
-            log(sid + ' Summary FAILED: ' + e.message);
+            s.banMessageStatus = 'failed: ' + e.message;
+            log(banId + ' Message failed: ' + e.message);
         }
 
         s.banStatus = 'complete';
-        reportsRunning[sid] = false;
-        log(sid + ' Ban complete. sent=' + sent + ' fail=' + failed);
+        reportsRunning[banId] = false;
+        log(banId + ' Ban complete: sent=' + sent + ' failed=' + failed);
     } catch (e) {
-        const s = sessions.get(sid);
-        if (s) {
-            s.banStatus = 'error';
-            s.banMessageStatus = 'failed';
-            reportsRunning[sid] = false;
+        const s = sessions.get(req.body.id);
+        if (s) { 
+            s.banStatus = 'error'; 
+            reportsRunning[req.body.id] = false; 
         }
-        log('Ban error [' + sid + ']: ' + e.message);
+        log('Ban error: ' + e.message);
     }
 });
 
@@ -347,35 +224,14 @@ app.post('/api/group', async (req, res) => {
 });
 
 app.delete('/api/session/:id', (req, res) => {
-    const rid = req.params.id;
-    const s = sessions.get(rid);
+    const s = sessions.get(req.params.id);
     if (s) {
-        reportsRunning[rid] = false;
         try { s.sock?.end(); } catch (e) {}
-        try { fs.rmSync(path.join(DATA_DIR, 'auth_' + rid), { recursive: true, force: true }); } catch (e) {}
-        delete reportsRunning[rid];
-        sessions.delete(rid);
-        log('Deleted ' + rid);
+        try { fs.rmSync(path.join(DATA_DIR, 'auth_' + req.params.id), { recursive: true, force: true }); } catch (e) {}
+        sessions.delete(req.params.id);
+        log('Deleted ' + req.params.id);
     }
     res.json({ ok: true });
-});
-
-process.on('SIGTERM', () => {
-    log('SIGTERM received, closing sockets...');
-    for (const [id, s] of sessions) {
-        reportsRunning[id] = false;
-        try { s.sock?.end(); } catch (e) {}
-    }
-    process.exit(0);
-});
-
-process.on('SIGINT', () => {
-    log('SIGINT received, closing sockets...');
-    for (const [id, s] of sessions) {
-        reportsRunning[id] = false;
-        try { s.sock?.end(); } catch (e) {}
-    }
-    process.exit(0);
 });
 
 app.listen(PORT, () => {
@@ -386,11 +242,7 @@ app.listen(PORT, () => {
         for (const d of dirs) {
             const id = d.replace('auth_', '');
             if (fs.existsSync(path.join(DATA_DIR, d, 'creds.json'))) {
-                sessions.set(id, {
-                    id, phone: '', sock: null, qrImage: null, code: null,
-                    status: 'connecting', error: null, reports: null,
-                    banStatus: null, banMessageStatus: null
-                });
+                sessions.set(id, { id, phone: '', sock: null, qrImage: null, code: null, status: 'connecting', error: null, reports: null, banStatus: null, banMessageStatus: null });
                 createSession(id, null, 'qr').catch(e => log(id + ' auto err: ' + e.message));
             }
         }
