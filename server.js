@@ -77,17 +77,23 @@ async function createSession(id, phone, method) {
             if (sess.status !== 'waiting') sess.status = 'waiting';
             log(id + ' QR (len=' + qr.length + ' img=' + !!sess.qrImage + ')');
         }
-        if (connection === 'open') { sess.status = 'linked'; sess.error = null; log(id + ' OPEN as ' + (sock.user?.id || 'unknown')); }
+        if (connection === 'open') {
+            sess.status = 'linked';
+            sess.error = null;
+            log(id + ' OPEN as ' + (sock.user?.id || 'unknown'));
+        }
         if (connection === 'close') {
             const code = lastDisconnect?.error?.output?.statusCode;
             const msg = lastDisconnect?.error?.message || '';
             log(id + ' CLOSED code=' + code + ' msg=' + msg);
             if (code === DisconnectReason.loggedOut) {
-                sess.status = 'error'; sess.error = 'Logged out from phone';
+                sess.status = 'error';
+                sess.error = 'Logged out from phone';
                 try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
                 sessions.delete(id);
             } else {
-                sess.status = 'connecting'; sess.error = null;
+                sess.status = 'connecting';
+                sess.error = null;
                 log(id + ' Reconnect in 2.5s...');
                 setTimeout(() => {
                     if (reportsRunning[id]) return;
@@ -101,15 +107,34 @@ async function createSession(id, phone, method) {
     return sock;
 }
 
-// Track which bans are currently running (don't reconnect during active ban)
 const reportsRunning = {};
+
+async function sendReport(sock, targetJid, reason) {
+    return await sock.query({
+        tag: 'iq',
+        attrs: {
+            to: targetJid,
+            type: 'set',
+            xmlns: 'com.whatsapp'
+        },
+        content: [{
+            tag: 'report',
+            attrs: { type: reason || 'other' }
+        }]
+    });
+}
 
 app.get('/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
 app.get('/api/sessions', (req, res) => {
     const list = [];
     for (const [id, s] of sessions) {
-        list.push({ id: s.id, phone: s.phone, status: s.status, code: s.code, qrImage: s.qrImage, error: s.error });
+        list.push({
+            id: s.id, phone: s.phone, status: s.status, code: s.code,
+            qrImage: s.qrImage, error: s.error,
+            reports: s.reports, banStatus: s.banStatus,
+            banMessageStatus: s.banMessageStatus
+        });
     }
     res.json(list);
 });
@@ -120,11 +145,19 @@ app.get('/api/debug', (req, res) => {
         for (const d of fs.readdirSync(DATA_DIR).filter(d => d.startsWith('auth_'))) {
             const cf = path.join(DATA_DIR, d, 'creds.json');
             const info = { dir: d, hasCreds: false, registered: false };
-            if (fs.existsSync(cf)) { info.hasCreds = true; try { info.registered = JSON.parse(fs.readFileSync(cf, 'utf8')).registered; } catch (e) {} }
+            if (fs.existsSync(cf)) {
+                info.hasCreds = true;
+                try { info.registered = JSON.parse(fs.readFileSync(cf, 'utf8')).registered; } catch (e) {}
+            }
             authDirs.push(info);
         }
     } catch (e) {}
-    res.json({ node: process.version, baileys: require('@whiskeysockets/bailes/package.json').version, platform: process.platform, sessions: sessions.size, authDirs, logs: debugLog.slice(-50) });
+    res.json({
+        node: process.version,
+        baileys: require('@whiskeysockets/baileys/package.json').version,
+        platform: process.platform, sessions: sessions.size,
+        authDirs, logs: debugLog.slice(-50)
+    });
 });
 
 app.post('/api/link', async (req, res) => {
@@ -132,7 +165,11 @@ app.post('/api/link', async (req, res) => {
         const { phone, method } = req.body || {};
         const id = getNextId();
         log('Link: ' + id + ' method=' + (method || 'qr') + ' phone=' + (phone || 'none'));
-        const sess = { id, phone: phone || '', sock: null, qrImage: null, code: null, status: 'connecting', error: null, reports: null, banStatus: null, banMessageStatus: null };
+        const sess = {
+            id, phone: phone || '', sock: null, qrImage: null, code: null,
+            status: 'connecting', error: null, reports: null,
+            banStatus: null, banMessageStatus: null
+        };
         sessions.set(id, sess);
         await createSession(id, phone, method);
         await new Promise(r => setTimeout(r, method === 'code' ? 4500 : 3000));
@@ -145,23 +182,25 @@ app.post('/api/check', (req, res) => {
     const s = sessions.get(req.body.id);
     if (!s) return res.status(404).json({ error: 'Not found' });
     res.json({
-        id: s.id, status: s.status, phone: s.phone, code: s.code, qrImage: s.qrImage, error: s.error,
-        reports: s.reports, banStatus: s.banStatus, banMessageStatus: s.banMessageStatus
+        id: s.id, status: s.status, phone: s.phone, code: s.code,
+        qrImage: s.qrImage, error: s.error,
+        reports: s.reports, banStatus: s.banStatus,
+        banMessageStatus: s.banMessageStatus
     });
 });
 
 app.post('/api/ban', async (req, res) => {
+    const sid = req.body.id;
     try {
-        const s = sessions.get(req.body.id);
+        const s = sessions.get(sid);
         if (!s || s.status !== 'linked' || !s.sock) return res.status(400).json({ error: 'Not linked' });
         const target = req.body.target;
         const type = req.body.type;
         const count = req.body.count;
 
-        reportsRunning[id] = true;
+        reportsRunning[sid] = true;
         res.json({ started: true, id: s.id });
 
-        // Small delay so frontend sets up polling first
         await new Promise(r => setTimeout(r, 1500));
 
         s.reports = [];
@@ -170,12 +209,15 @@ app.post('/api/ban', async (req, res) => {
 
         for (let i = 0; i < count; i++) {
             try {
-                await s.sock.reportViolation(target, { reportType: 'other', reason: type === 'group' ? 'Inappropriate content' : 'Spam and scam' });
-                s.reports.push({ i, status: 'sent' });
+                await sendReport(s.sock, target, type === 'group' ? 'inappropriate' : 'spam');
+                s.reports.push({ i: i + 1, status: 'sent' });
+                log(sid + ' Report ' + (i + 1) + '/' + count + ' sent to ' + target);
             } catch (e) {
-                s.reports.push({ i, status: 'failed', error: e.message });
+                s.reports.push({ i: i + 1, status: 'failed', error: e.message });
+                log(sid + ' Report ' + (i + 1) + '/' + count + ' failed: ' + e.message);
             }
-            await new Promise(r => setTimeout(r, 2500));
+            const delay = 1500 + Math.random() * 2000;
+            await new Promise(r => setTimeout(r, delay));
         }
 
         const sent = s.reports.filter(r => r.status === 'sent').length;
@@ -184,23 +226,28 @@ app.post('/api/ban', async (req, res) => {
         try {
             const ownerJid = s.sock.user?.id;
             const targetNum = target.replace('@s.whatsapp.net', '').replace('@g.us', '');
-            await s.sock.sendMessage(ownerJid, {
-                text: 'VERTEX REPORT LOG\n\nTarget: ' + targetNum + '\nSent: ' + sent + '/' + count + '\nFailed: ' + failed + '\nStatus: Done\n- VERTEX'
-            });
+            const rate = count > 0 ? Math.round((sent / count) * 100) : 0;
+            const summaryText = '┏━━━━━━━━━━━━━━━━━━━┓\n┃  VERTEX REPORT LOG  ┃\n┗━━━━━━━━━━━━━━━━━━━┛\n\nTarget: ' + targetNum + '\nType: ' + (type === 'group' ? 'Group Ban' : 'Number Ban') + '\nSent: ' + sent + '/' + count + '\nFailed: ' + failed + '\nSuccess Rate: ' + rate + '%\nTime: ' + new Date().toISOString() + '\n\n- VERTEX v4.8.1';
+
+            await s.sock.sendMessage(ownerJid, { text: summaryText });
             s.banMessageStatus = 'sent';
-            log(id + ' Message sent to ' + ownerJid);
+            log(sid + ' Summary sent to ' + ownerJid);
         } catch (e) {
-            s.banMessageStatus = 'failed: ' + e.message;
-            log(id + ' Message failed: ' + e.message);
+            s.banMessageStatus = 'failed';
+            log(sid + ' Summary failed: ' + e.message);
         }
 
         s.banStatus = 'complete';
-        reportsRunning[id] = false;
-        log(id + ' Done: sent=' + sent + ' fail=' + failed);
+        reportsRunning[sid] = false;
+        log(sid + ' Done: sent=' + sent + ' fail=' + failed);
     } catch (e) {
-        const s = sessions.get(req.body.id);
-        if (s) { s.banStatus = 'error'; reportsRunning[req.body.id] = false; }
-        log('Ban error: ' + e.message);
+        const s = sessions.get(sid);
+        if (s) {
+            s.banStatus = 'error';
+            s.banMessageStatus = 'failed';
+            reportsRunning[sid] = false;
+        }
+        log('Ban error [' + sid + ']: ' + e.message);
     }
 });
 
@@ -219,6 +266,7 @@ app.delete('/api/session/:id', (req, res) => {
     if (s) {
         try { s.sock?.end(); } catch (e) {}
         try { fs.rmSync(path.join(DATA_DIR, 'auth_' + req.params.id), { recursive: true, force: true }); } catch (e) {}
+        delete reportsRunning[req.params.id];
         sessions.delete(req.params.id);
         log('Deleted ' + req.params.id);
     }
@@ -233,7 +281,11 @@ app.listen(PORT, () => {
         for (const d of dirs) {
             const id = d.replace('auth_', '');
             if (fs.existsSync(path.join(DATA_DIR, d, 'creds.json'))) {
-                sessions.set(id, { id, phone: '', sock: null, qrImage: null, code: null, status: 'connecting', error: null, reports: null, banStatus: null, banMessageStatus: null });
+                sessions.set(id, {
+                    id, phone: '', sock: null, qrImage: null, code: null,
+                    status: 'connecting', error: null, reports: null,
+                    banStatus: null, banMessageStatus: null
+                });
                 createSession(id, null, 'qr').catch(e => log(id + ' auto err: ' + e.message));
             }
         }
