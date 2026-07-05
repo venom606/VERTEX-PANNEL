@@ -49,8 +49,19 @@ async function sendReport(sock, targetJid, reason, retries) {
             const result = await Promise.race([
                 sock.query({
                     tag: 'iq',
-                    attrs: { to: targetJid, type: 'set', xmlns: 'com.whatsapp' },
-                    content: [{ tag: 'report', attrs: { type: reason || 'other' } }]
+                    attrs: {
+                        to: 's.whatsapp.net',
+                        type: 'set',
+                        id: 'report-' + Date.now() + '-' + attempt
+                    },
+                    content: [{
+                        tag: 'report',
+                        attrs: {
+                            xmlns: 'urn:xmpp:whatsapp:report',
+                            jid: targetJid,
+                            type: reason || 'spam'
+                        }
+                    }]
                 }),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('IQ timeout')), 12000))
             ]);
@@ -210,7 +221,7 @@ app.post('/api/ban', async (req, res) => {
 
         const target = req.body.target;
         const type = req.body.type;
-        const count = req.body.count;
+        const count = req.body.count || 5;
 
         reportsRunning[sid] = true;
         res.json({ started: true, id: s.id });
