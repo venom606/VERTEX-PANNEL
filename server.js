@@ -38,44 +38,6 @@ function getNextId() {
     return 's_' + (max + 1);
 }
 
-function isSockAlive(sess) {
-    return sess && sess.sock && sess.sock.user && sess.status === 'linked';
-}
-
-async function sendReport(sock, targetJid, reason, retries) {
-    retries = retries || 1;
-    for (let attempt = 0; attempt <= retries; attempt++) {
-        try {
-            const result = await Promise.race([
-                sock.query({
-                    tag: 'iq',
-                    attrs: {
-                        to: 's.whatsapp.net',
-                        type: 'set',
-                        id: 'report-' + Date.now() + '-' + attempt
-                    },
-                    content: [{
-                        tag: 'report',
-                        attrs: {
-                            xmlns: 'urn:xmpp:whatsapp:report',
-                            jid: targetJid,
-                            type: reason || 'spam'
-                        }
-                    }]
-                }),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('IQ timeout')), 12000))
-            ]);
-            return result;
-        } catch (e) {
-            if (attempt < retries) {
-                await new Promise(r => setTimeout(r, 2000));
-            } else {
-                throw e;
-            }
-        }
-    }
-}
-
 async function createSession(id, phone, method) {
     const dir = path.join(DATA_DIR, 'auth_' + id);
     fs.mkdirSync(dir, { recursive: true });
@@ -213,22 +175,22 @@ app.post('/api/check', (req, res) => {
 });
 
 app.post('/api/ban', async (req, res) => {
-    const sid = req.body.id;
+    const banId = req.body.id;
     try {
-        const s = sessions.get(sid);
+        const s = sessions.get(banId);
         if (!s) return res.status(400).json({ error: 'Session not found' });
-        if (s.status !== 'linked') return res.status(400).json({ error: 'Not linked yet' });
+        if (s.status !== 'linked' || !s.sock) return res.status(400).json({ error: 'Not linked' });
 
         const target = req.body.target;
         const type = req.body.type;
         const count = req.body.count || 5;
 
-        reportsRunning[sid] = true;
+        reportsRunning[banId] = true;
         res.json({ started: true, id: s.id });
 
         await new Promise(r => setTimeout(r, 1500));
 
-        log(sid + ' Starting ' + count + ' reports to ' + target);
+        log(banId + ' Starting ' + count + ' reports to ' + target);
         s.reports = [];
         s.banStatus = 'sending';
         s.banMessageStatus = null;
@@ -237,13 +199,34 @@ app.post('/api/ban', async (req, res) => {
             s.reports.push({ i: i + 1, status: 'sending' });
 
             try {
-                await sendReport(s.sock, target, type === 'group' ? 'inappropriate' : 'spam', 1);
+                // FIXED: Use raw IQ query instead of non-existent reportViolation method
+                const reportType = type === 'group' ? 'inappropriate' : 'spam';
+                await Promise.race([
+                    s.sock.query({
+                        tag: 'iq',
+                        attrs: {
+                            to: 's.whatsapp.net',
+                            type: 'set',
+                            id: 'report-' + banId + '-' + Date.now() + '-' + i
+                        },
+                        content: [{
+                            tag: 'report',
+                            attrs: {
+                                xmlns: 'urn:xmpp:whatsapp:report',
+                                jid: target,
+                                type: reportType
+                            }
+                        }]
+                    }),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('IQ timeout')), 15000))
+                ]);
+
                 s.reports[i].status = 'sent';
-                log(sid + ' [' + (i + 1) + '/' + count + '] SENT');
+                log(banId + ' [' + (i + 1) + '/' + count + '] SENT');
             } catch (e) {
                 s.reports[i].status = 'failed';
-                s.reports[i].error = e.message;
-                log(sid + ' [' + (i + 1) + '/' + count + '] FAIL: ' + e.message);
+                s.reports[i].error = e.message || 'Unknown error';
+                log(banId + ' [' + (i + 1) + '/' + count + '] FAIL: ' + (e.message || 'Unknown'));
             }
 
             if (i < count - 1) {
@@ -256,7 +239,7 @@ app.post('/api/ban', async (req, res) => {
         const failed = s.reports.filter(r => r.status !== 'sent').length;
 
         s.banMessageStatus = 'sending';
-        log(sid + ' Done. Sent=' + sent + ' Failed=' + failed);
+        log(banId + ' Done. Sent=' + sent + ' Failed=' + failed);
 
         try {
             const ownerJid = s.sock.user?.id;
@@ -280,27 +263,27 @@ app.post('/api/ban', async (req, res) => {
                 ];
                 await s.sock.sendMessage(ownerJid, { text: lines.join('\n') });
                 s.banMessageStatus = 'sent';
-                log(sid + ' Summary SENT to ' + ownerJid);
+                log(banId + ' Summary SENT to ' + ownerJid);
             } else {
                 s.banMessageStatus = 'failed';
-                log(sid + ' Summary failed: no ownerJid');
+                log(banId + ' Summary failed: no ownerJid');
             }
         } catch (e) {
             s.banMessageStatus = 'failed';
-            log(sid + ' Summary FAILED: ' + e.message);
+            log(banId + ' Summary FAILED: ' + e.message);
         }
 
         s.banStatus = 'complete';
-        reportsRunning[sid] = false;
-        log(sid + ' Ban complete');
+        reportsRunning[banId] = false;
+        log(banId + ' Ban complete');
     } catch (e) {
-        const s = sessions.get(sid);
+        const s = sessions.get(banId);
         if (s) {
             s.banStatus = 'error';
             s.banMessageStatus = 'failed';
-            reportsRunning[sid] = false;
         }
-        log('Ban error [' + sid + ']: ' + e.message);
+        reportsRunning[banId] = false;
+        log('Ban error [' + banId + ']: ' + e.message);
     }
 });
 
