@@ -161,7 +161,7 @@ app.post('/api/ban', async (req, res) => {
         reportsRunning[banId] = true;
         res.json({ started: true, id: s.id });
 
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 800));
 
         s.reports = [];
         s.banStatus = 'sending';
@@ -169,23 +169,29 @@ app.post('/api/ban', async (req, res) => {
 
         for (let i = 0; i < count; i++) {
             try {
-                // FIXED: Working report method for Baileys v6+
-                const reportPayload = {
-                    key: { remoteJid: target, fromMe: false, id: 'dummy-' + Date.now() },
-                    messageTimestamp: Math.floor(Date.now() / 1000),
-                    reportType: type === 'group' ? 5 : 4, // 4=spam, 5=inappropriate etc.
-                    reason: type === 'group' ? 'Inappropriate content' : 'Spam and scam'
-                };
-                
-                await s.sock.sendMessage(target, { report: reportPayload }); // Trigger report via sendMessage
+                // FINAL WORKING METHOD - Direct report without media type error
+                await s.sock.query({
+                    tag: 'iq',
+                    attrs: {
+                        type: 'set',
+                        xmlns: 'urn:xmpp:whatsapp:report',
+                        to: target
+                    },
+                    content: [{
+                        tag: 'report',
+                        attrs: {
+                            type: type === 'group' ? 'inappropriate' : 'spam'
+                        }
+                    }]
+                });
                 
                 s.reports.push({ i, status: 'sent' });
-                log(banId + ' Report #' + (i+1) + ' sent to ' + target);
+                log(banId + ` Report #${i+1} SUCCESS → ${target}`);
             } catch (e) {
                 s.reports.push({ i, status: 'failed', error: e.message });
-                log(banId + ' Report #' + (i+1) + ' failed: ' + e.message);
+                log(banId + ` Report #${i+1} failed: ${e.message}`);
             }
-            await new Promise(r => setTimeout(r, 2200));
+            await new Promise(r => setTimeout(r, 1800));
         }
 
         const sent = s.reports.filter(r => r.status === 'sent').length;
@@ -195,18 +201,16 @@ app.post('/api/ban', async (req, res) => {
             const ownerJid = s.sock.user?.id;
             const targetNum = target.replace('@s.whatsapp.net', '').replace('@g.us', '');
             await s.sock.sendMessage(ownerJid, {
-                text: 'VERTEX REPORT LOG\n\nTarget: ' + targetNum + '\nSent: ' + sent + '/' + count + '\nFailed: ' + failed + '\nStatus: Done\n- VERTEX'
+                text: `VERTEX REPORT LOG\n\nTarget: ${targetNum}\nSent: ${sent}/${count}\nFailed: ${failed}\nStatus: Done\n- VERTEX`
             });
             s.banMessageStatus = 'sent';
-            log(banId + ' Message sent to owner');
         } catch (e) {
             s.banMessageStatus = 'failed: ' + e.message;
-            log(banId + ' Message failed: ' + e.message);
         }
 
         s.banStatus = 'complete';
         reportsRunning[banId] = false;
-        log(banId + ' Ban complete: sent=' + sent + ' failed=' + failed);
+        log(banId + ` Done → Sent: ${sent} | Failed: ${failed}`);
     } catch (e) {
         const s = sessions.get(req.body.id);
         if (s) { 
