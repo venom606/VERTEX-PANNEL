@@ -1,6 +1,6 @@
 {
   "name": "vertex-panel",
-  "version": "4.8.1",
+  "version": "4.8.3",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -11,6 +11,7 @@
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.9",
     "express": "^4.19.2",
+    "nodemailer": "^6.9.14",
     "pino": "^9.5.0",
     "qrcode": "^1.5.4"
   }
