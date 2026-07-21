@@ -6,83 +6,239 @@
 <title>VERTEX PANEL</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
-tailwind.config={darkMode:'class',theme:{extend:{colors:{dark:{900:'#0a0a0f',800:'#12121a',700:'#1a1a25',600:'#252530'},accent:{500:'#ef4444',600:'#dc2626',700:'#b91c1c'}}}}}
+tailwind.config={darkMode:'class',theme:{extend:{colors:{dark:{900:'#0a0a0f',800:'#12121a',700:'#1a1a25',600:'#252530'},accent:{500:'#ef4444',600:'#dc2626',700:'#b91c1c'},gold:{500:'#f59e0b',600:'#d97706'},cyan:{500:'#06b6d4',600:'#0891b2'},purple:{500:'#a855f7',600:'#9333ea'},green:{500:'#22c55e',600:'#16a34a'}}}}}
 </script>
 <style>
 body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-serif}
 ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#12121a}::-webkit-scrollbar-thumb{background:#252530;border-radius:3px}
-.glow{box-shadow:0 0 20px rgba(239,68,68,0.15)}.pulse-dot{animation:pulse 2s infinite}
+.glow{box-shadow:0 0 20px rgba(239,68,68,0.15)}.glow-gold{box-shadow:0 0 20px rgba(245,158,11,0.15)}.glow-cyan{box-shadow:0 0 20px rgba(6,182,212,0.15)}.glow-purple{box-shadow:0 0 20px rgba(168,85,247,0.15)}.glow-green{box-shadow:0 0 20px rgba(34,197,94,0.15)}
+.pulse-dot{animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-#debug-modal{display:none}#debug-modal.show{display:flex}
+#debug-modal,#email-modal{display:none}#debug-modal.show,#email-modal.show{display:flex}
 .report-row{animation:fadeSlide .3s ease}
 @keyframes fadeSlide{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
 .sending-pulse{animation:sendPulse 1.2s ease-in-out infinite}
 @keyframes sendPulse{0%,100%{opacity:1}50%{opacity:0.3}}
 .success-flash{animation:successFlash .6s ease}
 @keyframes successFlash{0%{background-color:rgba(34,197,94,0.2)}100%{background-color:transparent}}
+.tab-btn{transition:all .2s ease}
+.tab-btn.active{background:#dc2626;color:#fff}
+.tab-btn:not(.active){background:#252530;color:#9ca3af}
+.tab-btn:not(.active):hover{color:#fff}
+.email-card,.prompt-card{animation:fadeSlide .3s ease}
+.number-tag{animation:popIn .2s ease}
+@keyframes popIn{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
+.target-card{cursor:pointer;transition:all .15s ease}
+.target-card:hover{border-color:#f59e0b;transform:translateY(-1px)}
+.target-card.active{border-color:#06b6d4;box-shadow:0 0 15px rgba(6,182,212,0.2)}
+.prompt-item{animation:fadeSlide .2s ease}
+.wa-email-row{animation:fadeSlide .2s ease}
+.matrix-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
 </style>
+<base target="_blank">
 </head>
 <body class="min-h-screen">
 <div class="max-w-6xl mx-auto p-4 md:p-6">
+  <!-- HEADER -->
   <div class="flex items-center gap-3 mb-8">
     <div class="w-10 h-10 rounded-lg bg-accent-600 flex items-center justify-center text-white font-bold text-lg">V</div>
-    <div><h1 class="text-xl font-bold text-white">VERTEX PANEL</h1><p class="text-xs text-gray-500">v4.8 — Baileys 6.3.0</p></div>
+    <div><h1 class="text-xl font-bold text-white">VERTEX PANEL</h1><p class="text-xs text-gray-500">v4.8.3 — Matrix Mode | Every Email x Every Prompt x Every Address</p></div>
     <div class="ml-auto flex items-center gap-3">
       <button onclick="openDebug()" class="px-3 py-1.5 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs font-medium rounded-lg transition">Debug</button>
       <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-green-500 pulse-dot"></span><span class="text-xs text-gray-400">Online</span></div>
     </div>
   </div>
-  <div class="mb-8">
+
+  <!-- TABS -->
+  <div class="flex gap-2 mb-6 flex-wrap">
+    <button id="tab-sessions" onclick="switchTab('sessions')" class="tab-btn active px-4 py-2 rounded-lg text-xs font-medium">Sessions</button>
+    <button id="tab-emails" onclick="switchTab('emails')" class="tab-btn px-4 py-2 rounded-lg text-xs font-medium">Emails</button>
+    <button id="tab-numbers" onclick="switchTab('numbers')" class="tab-btn px-4 py-2 rounded-lg text-xs font-medium">Targets</button>
+    <button id="tab-prompts" onclick="switchTab('prompts')" class="tab-btn px-4 py-2 rounded-lg text-xs font-medium">Ban Prompts</button>
+    <button id="tab-waemails" onclick="switchTab('waemails')" class="tab-btn px-4 py-2 rounded-lg text-xs font-medium">WA Support</button>
+  </div>
+
+  <!-- SESSIONS TAB -->
+  <div id="panel-sessions">
+    <div class="mb-8">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">WhatsApp Sessions</h2>
+        <button onclick="addSession()" class="px-3 py-1.5 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">+ Add Session</button>
+      </div>
+      <div id="session-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div id="empty-sessions" class="col-span-full text-center py-12 text-gray-600 text-sm">Loading...</div>
+      </div>
+    </div>
+    <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-8 glow">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Ban Configuration</h2>
+        <div id="active-target-badge" class="hidden px-3 py-1 bg-cyan-600/20 border border-cyan-600/40 rounded-lg text-xs text-cyan-400"></div>
+      </div>
+      <div class="flex gap-2 mb-5">
+        <button id="btn-num" onclick="setBanType('number')" class="px-4 py-2 rounded-lg text-xs font-medium transition bg-accent-600 text-white">Number</button>
+        <button id="btn-grp" onclick="setBanType('group')" class="px-4 py-2 rounded-lg text-xs font-medium transition bg-dark-600 text-gray-400 hover:text-white">Group</button>
+      </div>
+      <div id="inp-num" class="mb-4">
+        <label class="block text-xs text-gray-500 mb-1.5">Target Number</label>
+        <input id="target-number" type="text" placeholder="94771234567" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-accent-600">
+      </div>
+      <div id="inp-grp" class="mb-4 hidden">
+        <label class="block text-xs text-gray-500 mb-1.5">Group Invite Link</label>
+        <div class="flex gap-2">
+          <input id="target-group" type="text" placeholder="https://chat.whatsapp.com/..." class="flex-1 bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-accent-600">
+          <button onclick="resolveGroup()" class="px-4 py-2 bg-dark-600 hover:bg-dark-700 text-gray-300 text-xs rounded-lg transition">Resolve</button>
+        </div>
+        <div id="group-info" class="mt-2 text-xs text-gray-500"></div>
+      </div>
+      <div class="mb-5">
+        <label class="block text-xs text-gray-500 mb-1.5">Reports Per Session</label>
+        <div class="flex items-center gap-3">
+          <button onclick="changeCount(-1)" class="w-8 h-8 rounded-lg bg-dark-600 hover:bg-dark-700 text-gray-300 flex items-center justify-center transition">-</button>
+          <span id="report-count" class="text-lg font-bold text-white w-8 text-center">5</span>
+          <button onclick="changeCount(1)" class="w-8 h-8 rounded-lg bg-dark-600 hover:bg-dark-700 text-gray-300 flex items-center justify-center transition">+</button>
+        </div>
+      </div>
+      <div class="mb-5">
+        <label class="block text-xs text-gray-500 mb-2">Use Sessions</label>
+        <div id="session-checks" class="flex flex-wrap gap-2"><span class="text-xs text-gray-600">Link sessions first</span></div>
+      </div>
+      <!-- MATRIX PREVIEW -->
+      <div class="mb-5 p-4 bg-green-900/20 rounded-lg border border-green-600/30 glow-green">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-xs text-green-400 font-bold uppercase tracking-wider">Matrix Mode Preview</h3>
+          <span id="matrix-total" class="matrix-badge bg-green-600 text-white">0 emails</span>
+        </div>
+        <div class="grid grid-cols-3 gap-2 text-xs">
+          <div class="bg-dark-700/50 rounded p-2 text-center">
+            <div id="matrix-emails" class="text-lg font-bold text-white">0</div>
+            <div class="text-gray-500">User Emails</div>
+          </div>
+          <div class="bg-dark-700/50 rounded p-2 text-center">
+            <div id="matrix-prompts" class="text-lg font-bold text-white">0</div>
+            <div class="text-gray-500">Ban Prompts</div>
+          </div>
+          <div class="bg-dark-700/50 rounded p-2 text-center">
+            <div id="matrix-wa" class="text-lg font-bold text-white">0</div>
+            <div class="text-gray-500">WA Addresses</div>
+          </div>
+        </div>
+        <p class="text-xs text-gray-500 mt-2">Every email sends every prompt to every WA address. Target number auto-inserted into each prompt.</p>
+      </div>
+      <button onclick="executeBan()" id="btn-exec" class="w-full py-3 bg-accent-600 hover:bg-accent-700 disabled:bg-dark-600 disabled:text-gray-600 text-white font-semibold rounded-lg transition text-sm" disabled>EXECUTE BAN</button>
+    </div>
+    <div id="results-section" class="hidden mb-8">
+      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Live Report Feed</h2>
+      <div id="sending-indicator" class="hidden mb-3 flex items-center gap-3 px-4 py-3 bg-dark-700 rounded-lg border border-dark-600">
+        <div class="flex gap-1.5"><span class="w-2 h-2 rounded-full bg-accent-600 sending-pulse"></span><span class="w-2 h-2 rounded-full bg-accent-600 sending-pulse" style="animation-delay:0.3s"></span><span class="w-2 h-2 rounded-full bg-accent-600 sending-pulse" style="animation-delay:0.6s"></span></div>
+        <span class="text-accent-400 text-sm font-medium">Sending reports...</span>
+      </div>
+      <div id="results-list" class="space-y-1.5 mb-4"></div>
+      <div id="results-summary" class="bg-dark-800 rounded-lg border border-dark-600 p-4 text-sm hidden"></div>
+    </div>
+  </div>
+
+  <!-- EMAILS TAB -->
+  <div id="panel-emails" class="hidden">
     <div class="flex items-center justify-between mb-4">
-      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Sessions</h2>
-      <button onclick="addSession()" class="px-3 py-1.5 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">+ Add Session</button>
+      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Email Accounts (SMTP Senders) — Unlimited</h2>
+      <button onclick="openEmailModal()" class="px-3 py-1.5 bg-gold-600 hover:bg-gold-500 text-white text-xs font-medium rounded-lg transition">+ Add Email</button>
     </div>
-    <div id="session-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      <div id="empty-sessions" class="col-span-full text-center py-12 text-gray-600 text-sm">Loading...</div>
+    <div class="bg-dark-800 rounded-xl border border-dark-600 p-4 mb-6 glow-gold">
+      <p class="text-xs text-gray-500">Add unlimited emails with App Passwords. Each email will send ALL prompts to ALL WhatsApp support addresses. Use {number} in prompts for auto-insertion.</p>
+    </div>
+    <div id="email-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div id="empty-emails" class="col-span-full text-center py-12 text-gray-600 text-sm">No emails added yet. Click "+ Add Email" to start.</div>
     </div>
   </div>
-  <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-8 glow">
-    <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-5">Ban Configuration</h2>
-    <div class="flex gap-2 mb-5">
-      <button id="btn-num" onclick="setBanType('number')" class="px-4 py-2 rounded-lg text-xs font-medium transition bg-accent-600 text-white">Number</button>
-      <button id="btn-grp" onclick="setBanType('group')" class="px-4 py-2 rounded-lg text-xs font-medium transition bg-dark-600 text-gray-400 hover:text-white">Group</button>
+
+  <!-- TARGETS TAB -->
+  <div id="panel-numbers" class="hidden">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Ban Targets</h2>
+      <button onclick="openNumberModal()" class="px-3 py-1.5 bg-gold-600 hover:bg-gold-500 text-white text-xs font-medium rounded-lg transition">+ Add Target</button>
     </div>
-    <div id="inp-num" class="mb-4">
-      <label class="block text-xs text-gray-500 mb-1.5">Target Number</label>
-      <input id="target-number" type="text" placeholder="94771234567" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-accent-600">
+    <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-6 glow-gold">
+      <h3 class="text-xs text-gray-500 mb-3">Quick Add Target + Link to Email</h3>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <input id="ql-number" type="text" placeholder="Phone number (e.g. 94771234567)" class="bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
+        <select id="ql-email" class="bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-gold-600">
+          <option value="">Select email...</option>
+        </select>
+        <input id="ql-label" type="text" placeholder="Label (optional)" class="bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
+      </div>
+      <button onclick="quickLinkNumber()" class="mt-3 px-4 py-2 bg-gold-600 hover:bg-gold-500 text-white text-xs font-medium rounded-lg transition">Add Target</button>
     </div>
-    <div id="inp-grp" class="mb-4 hidden">
-      <label class="block text-xs text-gray-500 mb-1.5">Group Invite Link</label>
+    <div id="targets-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div id="empty-targets" class="col-span-full text-center py-12 text-gray-600 text-sm">No targets yet. Add a number to start banning.</div>
+    </div>
+  </div>
+
+  <!-- PROMPTS TAB -->
+  <div id="panel-prompts" class="hidden">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Ban Prompts — Unlimited</h2>
       <div class="flex gap-2">
-        <input id="target-group" type="text" placeholder="https://chat.whatsapp.com/..." class="flex-1 bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-accent-600">
-        <button onclick="resolveGroup()" class="px-4 py-2 bg-dark-600 hover:bg-dark-700 text-gray-300 text-xs rounded-lg transition">Resolve</button>
-      </div>
-      <div id="group-info" class="mt-2 text-xs text-gray-500"></div>
-    </div>
-    <div class="mb-5">
-      <label class="block text-xs text-gray-500 mb-1.5">Reports Per Session</label>
-      <div class="flex items-center gap-3">
-        <button onclick="changeCount(-1)" class="w-8 h-8 rounded-lg bg-dark-600 hover:bg-dark-700 text-gray-300 flex items-center justify-center transition">-</button>
-        <span id="report-count" class="text-lg font-bold text-white w-8 text-center">5</span>
-        <button onclick="changeCount(1)" class="w-8 h-8 rounded-lg bg-dark-600 hover:bg-dark-700 text-gray-300 flex items-center justify-center transition">+</button>
+        <button onclick="resetPrompts()" class="px-3 py-1.5 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs font-medium rounded-lg transition">Reset Defaults</button>
+        <button onclick="savePrompts()" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded-lg transition">Save Prompts</button>
       </div>
     </div>
-    <div class="mb-5">
-      <label class="block text-xs text-gray-500 mb-2">Use Sessions</label>
-      <div id="session-checks" class="flex flex-wrap gap-2"><span class="text-xs text-gray-600">Link sessions first</span></div>
+    <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-6 glow-cyan">
+      <h3 class="text-xs text-gray-500 mb-2">Prompt Placeholder</h3>
+      <p class="text-xs text-gray-600">Use <code class="bg-dark-700 px-1 py-0.5 rounded text-cyan-400">{number}</code> anywhere in your prompt. It will be replaced with the target number automatically.</p>
+      <p class="text-xs text-gray-600 mt-1">Example: "The account +<code class="text-cyan-400">{number}</code> is sharing CSAM..."</p>
     </div>
-    <button onclick="executeBan()" id="btn-exec" class="w-full py-3 bg-accent-600 hover:bg-accent-700 disabled:bg-dark-600 disabled:text-gray-600 text-white font-semibold rounded-lg transition text-sm" disabled>EXECUTE BAN</button>
+    <div id="prompts-list" class="space-y-2">
+      <div id="empty-prompts" class="text-center py-12 text-gray-600 text-sm">Loading prompts...</div>
+    </div>
   </div>
-  <div id="results-section" class="hidden mb-8">
-    <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Live Report Feed</h2>
-    <div id="sending-indicator" class="hidden mb-3 flex items-center gap-3 px-4 py-3 bg-dark-700 rounded-lg border border-dark-600">
-      <div class="flex gap-1.5"><span class="w-2 h-2 rounded-full bg-accent-600 sending-pulse"></span><span class="w-2 h-2 rounded-full bg-accent-600 sending-pulse" style="animation-delay:0.3s"></span><span class="w-2 h-2 rounded-full bg-accent-600 sending-pulse" style="animation-delay:0.6s"></span></div>
-      <span class="text-accent-400 text-sm font-medium">Sending reports...</span>
+
+  <!-- WHATSAPP SUPPORT EMAILS TAB -->
+  <div id="panel-waemails" class="hidden">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">WhatsApp Support Emails</h2>
+      <button onclick="addWaEmail()" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-lg transition">+ Add WA Email</button>
     </div>
-    <div id="results-list" class="space-y-1.5 mb-4"></div>
-    <div id="results-summary" class="bg-dark-800 rounded-lg border border-dark-600 p-4 text-sm hidden"></div>
+    <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-6 glow-purple">
+      <h3 class="text-xs text-gray-500 mb-2">Pre-Loaded WhatsApp Addresses</h3>
+      <p class="text-xs text-gray-600">Every active address below receives an email for EVERY prompt from EVERY user email. Toggle to enable/disable.</p>
+    </div>
+    <div id="wa-emails-list" class="space-y-2">
+      <div id="empty-waemails" class="text-center py-12 text-gray-600 text-sm">Loading WhatsApp emails...</div>
+    </div>
   </div>
 </div>
+
+<!-- EMAIL MODAL -->
+<div id="email-modal" class="fixed inset-0 bg-black/80 z-50 items-center justify-center p-4">
+  <div class="bg-dark-800 rounded-xl border border-dark-600 w-full max-w-md flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-dark-600">
+      <h3 id="email-modal-title" class="text-sm font-bold text-white">Add Email</h3>
+      <button onclick="closeEmailModal()" class="text-gray-500 hover:text-white text-lg leading-none">&times;</button>
+    </div>
+    <div class="p-4 space-y-4">
+      <input type="hidden" id="email-edit-id" value="">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1.5">Email Address</label>
+        <input id="email-input" type="email" placeholder="example@gmail.com" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1.5">App Password</label>
+        <input id="app-password-input" type="text" placeholder="xxxx xxxx xxxx xxxx" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
+        <p class="text-xs text-gray-600 mt-1">Google: Account > Security > 2-Step Verification > App Passwords</p>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1.5">Notes</label>
+        <textarea id="email-notes-input" rows="2" placeholder="Optional notes..." class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600 resize-none"></textarea>
+      </div>
+    </div>
+    <div class="p-4 border-t border-dark-600 flex gap-2">
+      <button onclick="saveEmail()" class="flex-1 py-2 bg-gold-600 hover:bg-gold-500 text-white text-sm font-medium rounded-lg transition">Save</button>
+      <button onclick="closeEmailModal()" class="px-4 py-2 bg-dark-600 hover:bg-dark-700 text-gray-300 text-sm rounded-lg transition">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- DEBUG MODAL -->
 <div id="debug-modal" class="fixed inset-0 bg-black/80 z-50 items-center justify-center p-4">
   <div class="bg-dark-800 rounded-xl border border-dark-600 w-full max-w-2xl max-h-[80vh] flex flex-col">
     <div class="flex items-center justify-between p-4 border-b border-dark-600">
@@ -97,10 +253,34 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
   </div>
 </div>
 <script>
-let sessions=[],banType='number',reportCount=5,groupJid=null,pollingIntervals={};
+// ========================
+// GLOBAL STATE
+// ========================
+let sessions=[], emails=[], numberLinks=[], waEmails=[], prompts=[], banType='number', reportCount=5, groupJid=null, pollingIntervals={}, currentTab='sessions', activeTarget=null;
+
 async function api(p,b){return(await fetch('/api/'+p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})).json()}
 async function apiGet(p){return(await fetch('/api/'+p)).json()}
+async function apiPut(p,b){return(await fetch('/api/'+p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})).json()}
 async function apiDel(p){await fetch('/api/'+p,{method:'DELETE'})}
+
+// ========================
+// TABS
+// ========================
+function switchTab(tab){
+  currentTab=tab;
+  ['sessions','emails','numbers','prompts','waemails'].forEach(t=>{
+    document.getElementById('tab-'+t).className=tab===t?'tab-btn active px-4 py-2 rounded-lg text-xs font-medium':'tab-btn px-4 py-2 rounded-lg text-xs font-medium';
+    document.getElementById('panel-'+t).classList.toggle('hidden',tab!==t);
+  });
+  if(tab==='emails') loadEmails();
+  if(tab==='numbers'){ loadEmails(); loadNumbers(); }
+  if(tab==='prompts') loadPrompts();
+  if(tab==='waemails') loadWaEmails();
+}
+
+// ========================
+// DEBUG
+// ========================
 function openDebug(){document.getElementById('debug-modal').classList.add('show');refreshDebug()}
 function closeDebug(){document.getElementById('debug-modal').classList.remove('show')}
 async function refreshDebug(){
@@ -108,11 +288,15 @@ async function refreshDebug(){
     const d=await apiGet('debug');
     let ai='';
     if(d.authDirs&&d.authDirs.length)ai='<br><span class="text-gray-500 mt-1 block">Auth:</span> '+d.authDirs.map(a=>'<span class="'+(a.hasCreds?'text-green-400':'text-gray-500')+'">'+a.dir+(a.hasCreds?' ('+(a.registered?'reg':'unreg')+')':' (empty)')+'</span>').join(' ');
-    document.getElementById('debug-info').innerHTML='<span class="text-gray-500">Node:</span> <span class="text-white">'+d.node+'</span> <span class="text-gray-500">Baileys:</span> <span class="text-white">'+d.baileys+'</span> <span class="text-gray-500">Sessions:</span> <span class="text-white">'+d.sessions+'</span>'+ai;
+    document.getElementById('debug-info').innerHTML='<span class="text-gray-500">Node:</span> <span class="text-white">'+d.node+'</span> <span class="text-gray-500">Baileys:</span> <span class="text-white">'+d.baileys+'</span> <span class="text-gray-500">Sessions:</span> <span class="text-white">'+d.sessions+'</span> <span class="text-gray-500">Emails:</span> <span class="text-white">'+d.emails+'</span> <span class="text-gray-500">Links:</span> <span class="text-white">'+d.numberLinks+'</span> <span class="text-gray-500">WA:</span> <span class="text-white">'+d.whatsappEmails+'</span> <span class="text-gray-500">Prompts:</span> <span class="text-white">'+d.prompts+'</span>'+ai;
     document.getElementById('debug-logs').innerHTML=d.logs.map(l=>{let c='text-gray-400';if(l.msg.includes('CLOSED')||l.msg.includes('error')||l.msg.includes('Error'))c='text-red-400';else if(l.msg.includes('QR')||l.msg.includes('OPEN')||l.msg.includes('Sent')||l.msg.includes('Message sent'))c='text-green-400';else if(l.msg.includes('Reconnect'))c='text-yellow-400';return'<div class="'+c+'">['+l.time.split('T')[1].split('.')[0]+'] '+l.msg+'</div>'}).join('');
     document.getElementById('debug-logs').scrollTop=99999;
   }catch(e){document.getElementById('debug-logs').innerHTML='<div class="text-red-400">'+e.message+'</div>'}
 }
+
+// ========================
+// SESSIONS
+// ========================
 async function loadExistingSessions(){
   try{
     const list=await apiGet('sessions');
@@ -196,18 +380,31 @@ function renderChecks(){
 }
 function updatePhone(lid,v){const s=sessions.find(x=>x.localId===lid);if(s)s.phone=v}
 
+// ========================
+// MATRIX BAN EXECUTION
+// ========================
 async function executeBan(){
   const linked=sessions.filter(s=>s.status==='linked'&&s.selected);
   if(!linked.length)return;
   let target;
-  if(banType==='number'){let n=document.getElementById('target-number').value.replace(/\D/g,'');if(n.startsWith('0'))n=n.substring(1);target=n+'@s.whatsapp.net'}
-  else{if(!groupJid){alert('Resolve group first');return}target=groupJid}
+  if(banType==='number'){
+    let n=document.getElementById('target-number').value.replace(/\D/g,'');
+    if(n.startsWith('0'))n=n.substring(1);
+    target=n+'@s.whatsapp.net';
+  }else{
+    if(!groupJid){alert('Resolve group first');return}
+    target=groupJid;
+  }
+  if(!target||target==='@s.whatsapp.net'){alert('Enter a valid target');return}
+
+  const targetNumber=document.getElementById('target-number').value.replace(/\D/g,'');
+
   const btn=document.getElementById('btn-exec');btn.disabled=true;btn.textContent='SENDING...';
   const rs=document.getElementById('results-section');const rl=document.getElementById('results-list');const si=document.getElementById('sending-indicator');const sm=document.getElementById('results-summary');
   rs.classList.remove('hidden');rl.innerHTML='';sm.classList.add('hidden');
 
   for(const s of linked){
-    try{await api('ban',{id:s.id,target,type:banType,count:reportCount})}catch(e){}
+    try{await api('ban',{id:s.id,target,type:banType,count:reportCount,targetNumber})}catch(e){}
     const lid=s.localId;
     const intv=setInterval(async()=>{
       const s=sessions.find(x=>x.localId===lid);if(!s){clearInterval(intv);return}
@@ -227,13 +424,213 @@ async function executeBan(){
         const sent=res.reports.filter(r=>r.status==='sent').length;
         const failed=res.reports.filter(r=>r.status==='failed').length;
         sm.classList.remove('hidden');sm.classList.add('success-flash');
-        sm.innerHTML='<div class="space-y-2"><div class="text-green-400 font-semibold text-sm">SUCCESSFUL</div><div class="flex justify-between"><span class="text-gray-400">Total</span><span class="text-white font-bold">'+(sent+failed)+'</span></div><div class="flex justify-between"><span class="text-gray-400">Sent</span><span class="text-green-400">'+sent+'</span></div><div class="flex justify-between"><span class="text-gray-400">Failed</span><span class="text-red-400">'+failed+'</span></div>'+(res.banMessageStatus==='sent'?'<div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Message to you</span><span class="text-green-400">Delivered</span></div>':res.banMessageStatus&&res.banMessageStatus.startsWith('failed')?'<div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Message to you</span><span class="text-red-400">Failed</span></div>':'')+'</div>';
+        sm.innerHTML='<div class="space-y-2"><div class="text-green-400 font-semibold text-sm">SUCCESSFUL</div><div class="flex justify-between"><span class="text-gray-400">Nodes Sent</span><span class="text-white font-bold">'+sent+'/'+reportCount+'</span></div><div class="flex justify-between"><span class="text-gray-400">Failed</span><span class="text-red-400">'+failed+'</span></div>'+(res.banMessageStatus==='sent'?'<div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Summary to you</span><span class="text-green-400">Delivered</span></div>':res.banMessageStatus&&res.banMessageStatus.startsWith('failed')?'<div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Summary to you</span><span class="text-red-400">Failed</span></div>':'')+'</div>';
         btn.disabled=false;btn.textContent='EXECUTE BAN';
       }
     },800);
   }
 }
+
+// ========================
+// MATRIX PREVIEW UPDATE
+// ========================
+function updateMatrixPreview(){
+  const activeEmails=emails.filter(e=>e.status==='active').length;
+  const activePrompts=prompts.length;
+  const activeWa=waEmails.filter(we=>we.active).length;
+  const total=activeEmails*activePrompts*activeWa;
+  document.getElementById('matrix-emails').textContent=activeEmails;
+  document.getElementById('matrix-prompts').textContent=activePrompts;
+  document.getElementById('matrix-wa').textContent=activeWa;
+  document.getElementById('matrix-total').textContent=total+' emails total';
+}
+
+// ========================
+// EMAIL MANAGEMENT (UNLIMITED)
+// ========================
+async function loadEmails(){
+  try{emails=await apiGet('emails');renderEmails();updateEmailSelects();updateMatrixPreview();}catch(e){console.error('loadEmails error',e)}
+}
+function renderEmails(){
+  const grid=document.getElementById('email-grid');
+  if(!emails.length){grid.innerHTML='<div id="empty-emails" class="col-span-full text-center py-12 text-gray-600 text-sm">No emails added yet. Click "+ Add Email" to start.</div>';return;}
+  grid.innerHTML=emails.map(e=>{
+    const linkedNums=e.linkedNumbers&&e.linkedNumbers.length?e.linkedNumbers.map(n=>'<span class="number-tag inline-flex items-center gap-1 px-2 py-0.5 bg-dark-700 rounded text-xs text-gray-300">'+n+'</span>').join(''):'<span class="text-xs text-gray-600">No linked targets</span>';
+    const statusColor=e.status==='active'?'text-green-400':'text-gray-500';
+    return'<div class="email-card bg-dark-800 rounded-xl border border-dark-600 p-4"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full '+(e.status==='active'?'bg-green-500':'bg-gray-600')+'"></span><span class="text-xs '+statusColor+'">'+(e.status==='active'?'Active':'Inactive')+'</span></div><div class="flex gap-1"><button onclick="editEmail(\''+e.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs rounded transition">Edit</button><button onclick="deleteEmail(\''+e.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button></div></div><div class="mb-2"><div class="text-sm font-medium text-white truncate">'+e.email+'</div><div class="text-xs text-gray-500 mt-0.5">App Password: '+maskPassword(e.appPassword)+'</div></div><div class="mb-2"><div class="text-xs text-gray-500 mb-1">Linked Targets:</div><div class="flex flex-wrap gap-1">'+linkedNums+'</div></div>'+(e.notes?'<div class="text-xs text-gray-600 italic">'+e.notes+'</div>':'')+'</div>';
+  }).join('');
+}
+function maskPassword(pw){if(!pw)return'—';if(pw.length<=8)return'*'.repeat(pw.length);return pw.substring(0,2)+'*'.repeat(pw.length-4)+pw.substring(pw.length-2);}
+function updateEmailSelects(){
+  const selects=document.querySelectorAll('select[id="ql-email"]');
+  selects.forEach(sel=>{sel.innerHTML='<option value="">Select email...</option>'+emails.map(e=>'<option value="'+e.id+'">'+e.email+'</option>').join('');});
+}
+function openEmailModal(){
+  document.getElementById('email-modal-title').textContent='Add Email';
+  document.getElementById('email-edit-id').value='';
+  document.getElementById('email-input').value='';
+  document.getElementById('app-password-input').value='';
+  document.getElementById('email-notes-input').value='';
+  document.getElementById('email-modal').classList.add('show');
+}
+function closeEmailModal(){document.getElementById('email-modal').classList.remove('show')}
+async function saveEmail(){
+  const id=document.getElementById('email-edit-id').value;
+  const email=document.getElementById('email-input').value.trim();
+  const appPassword=document.getElementById('app-password-input').value.trim();
+  const notes=document.getElementById('email-notes-input').value.trim();
+  if(!email||!appPassword){alert('Email and App Password required');return}
+  try{
+    if(id){await apiPut('emails/'+id,{appPassword,notes});}
+    else{await api('emails',{email,appPassword,notes});}
+    closeEmailModal();loadEmails();
+  }catch(e){alert('Error: '+(e.error||e.message))}
+}
+function editEmail(id){
+  const e=emails.find(x=>x.id===id);if(!e)return;
+  document.getElementById('email-modal-title').textContent='Edit Email';
+  document.getElementById('email-edit-id').value=e.id;
+  document.getElementById('email-input').value=e.email;
+  document.getElementById('app-password-input').value=e.appPassword;
+  document.getElementById('email-notes-input').value=e.notes||'';
+  document.getElementById('email-modal').classList.add('show');
+}
+async function deleteEmail(id){
+  if(!confirm('Delete this email and all linked targets?'))return;
+  try{await apiDel('emails/'+id);loadEmails();loadNumbers();}catch(e){alert('Error: '+(e.error||e.message))}
+}
+
+// ========================
+// TARGETS / NUMBER LINKING
+// ========================
+async function loadNumbers(){
+  try{numberLinks=await apiGet('numbers');renderNumbers();}catch(e){console.error('loadNumbers error',e)}
+}
+function renderNumbers(){
+  const grid=document.getElementById('targets-grid');
+  if(!numberLinks.length){grid.innerHTML='<div id="empty-targets" class="col-span-full text-center py-12 text-gray-600 text-sm">No targets yet. Add a number to start banning.</div>';return;}
+  grid.innerHTML=numberLinks.map(n=>{
+    const isActive=activeTarget&&activeTarget.id===n.id;
+    return'<div class="target-card '+(isActive?'active':'')+' bg-dark-800 rounded-xl border border-dark-600 p-4" onclick="selectTarget(\''+n.id+'\')">'+
+      '<div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-full bg-gold-600/20 flex items-center justify-center text-gold-500 text-xs font-bold">T</div><span class="text-xs text-gray-500">Target</span></div><div class="flex gap-1"><button onclick="event.stopPropagation();deleteTarget(\''+n.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button></div></div>'+
+      '<div class="mb-2"><div class="text-lg font-bold text-white">+'+n.number+'</div><div class="text-xs text-cyan-400">'+n.email+'</div></div>'+
+      (n.label?'<div class="text-xs text-gray-500 mb-2">Label: '+n.label+'</div>':'')+
+      '<div class="flex items-center gap-2 mt-2"><span class="text-xs text-gray-500">Click to select for ban</span>'+(isActive?'<span class="text-xs text-cyan-400 font-bold">SELECTED</span>':'')+'</div>'+
+      '</div>';
+  }).join('');
+}
+function selectTarget(id){
+  const t=numberLinks.find(x=>x.id===id);
+  if(!t)return;
+  activeTarget=t;
+  document.getElementById('target-number').value=t.number;
+  setBanType('number');
+  const badge=document.getElementById('active-target-badge');
+  badge.classList.remove('hidden');
+  badge.innerHTML='Target: <span class="font-bold">+'+t.number+'</span> via '+t.email;
+  switchTab('sessions');
+  renderNumbers();
+}
+async function deleteTarget(id){
+  if(!confirm('Delete this target?'))return;
+  try{await apiDel('numbers/'+id);if(activeTarget&&activeTarget.id===id){activeTarget=null;document.getElementById('active-target-badge').classList.add('hidden');}loadNumbers();loadEmails();}catch(e){alert('Error: '+(e.error||e.message))}
+}
+async function quickLinkNumber(){
+  const number=document.getElementById('ql-number').value.trim();
+  const emailId=document.getElementById('ql-email').value;
+  const label=document.getElementById('ql-label').value.trim();
+  if(!number||!emailId){alert('Number and Email required');return}
+  try{
+    await api('numbers',{number,emailId,label});
+    document.getElementById('ql-number').value='';
+    document.getElementById('ql-label').value='';
+    loadNumbers();loadEmails();
+  }catch(e){alert('Error: '+(e.error||e.message))}
+}
+function openNumberModal(){switchTab('numbers');document.getElementById('ql-number').focus();}
+
+// ========================
+// PROMPTS MANAGEMENT (UNLIMITED)
+// ========================
+async function loadPrompts(){
+  try{
+    const res=await apiGet('prompts');
+    prompts=res.prompts||[];
+    renderPrompts();
+    updateMatrixPreview();
+  }catch(e){console.error('loadPrompts error',e)}
+}
+function renderPrompts(){
+  const list=document.getElementById('prompts-list');
+  if(!prompts.length){list.innerHTML='<div id="empty-prompts" class="text-center py-12 text-gray-600 text-sm">No prompts configured.</div>';return;}
+  list.innerHTML=prompts.map((p,i)=>{
+    const hasPlaceholder=p.includes('{number}');
+    return'<div class="prompt-item flex items-start gap-3 px-4 py-3 bg-dark-800 rounded-lg border border-dark-600">'+
+      '<div class="flex-shrink-0 w-6 h-6 rounded-full bg-cyan-600 flex items-center justify-center text-xs text-white font-bold">'+(i+1)+'</div>'+
+      '<div class="flex-1"><div class="text-sm text-white">'+escapeHtml(p)+'</div>'+(hasPlaceholder?'<div class="text-xs text-cyan-400 mt-1">✓ Has {number} placeholder</div>':'<div class="text-xs text-yellow-500 mt-1">⚠ No {number} placeholder — number will NOT be inserted</div>')+'</div>'+
+      '<div class="flex flex-col gap-1"><button onclick="editPrompt('+i+')" class="px-2 py-1 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs rounded transition">Edit</button><button onclick="deletePrompt('+i+')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button></div>'+
+      '</div>';
+  }).join('');
+}
+function escapeHtml(t){const d=document.createElement('div');d.textContent=t;return d.innerHTML;}
+function editPrompt(idx){
+  const newText=prompt('Edit prompt #'+(idx+1)+':', prompts[idx]||'');
+  if(newText===null||!newText.trim())return;
+  prompts[idx]=newText.trim();
+  renderPrompts();
+}
+function deletePrompt(idx){
+  if(!confirm('Delete prompt #'+(idx+1)+'?'))return;
+  prompts.splice(idx,1);
+  renderPrompts();
+}
+async function savePrompts(){
+  try{await api('prompts',{prompts});alert('Prompts saved! ('+prompts.length+' total)');loadPrompts();}catch(e){alert('Error: '+(e.error||e.message))}
+}
+async function resetPrompts(){
+  if(!confirm('Reset to 10 default high-power prompts?'))return;
+  try{await api('prompts/reset',{});loadPrompts();}catch(e){alert('Error: '+(e.error||e.message))}
+}
+
+// ========================
+// WHATSAPP SUPPORT EMAILS
+// ========================
+async function loadWaEmails(){
+  try{waEmails=await apiGet('whatsapp-emails');renderWaEmails();updateMatrixPreview();}catch(e){console.error('loadWaEmails error',e)}
+}
+function renderWaEmails(){
+  const list=document.getElementById('wa-emails-list');
+  if(!waEmails.length){list.innerHTML='<div id="empty-waemails" class="text-center py-12 text-gray-600 text-sm">No WhatsApp emails configured.</div>';return;}
+  list.innerHTML=waEmails.map(we=>{
+    return'<div class="wa-email-row flex items-center justify-between px-4 py-3 bg-dark-800 rounded-lg border border-dark-600">'+
+      '<div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full '+(we.active?'bg-purple-600/20':'bg-dark-600')+' flex items-center justify-center text-purple-500 text-xs font-bold">W</div><div><div class="text-sm text-white font-medium">'+we.email+'</div><div class="text-xs text-gray-500">'+we.label+'</div></div></div>'+
+      '<div class="flex items-center gap-2">'+
+      '<label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" '+(we.active?'checked':'')+' onchange="toggleWaEmail(\''+we.id+'\',this.checked)" class="accent-purple-600 w-4 h-4"><span class="text-xs text-gray-400">'+(we.active?'Active':'Inactive')+'</span></label>'+
+      '<button onclick="deleteWaEmail(\''+we.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button>'+
+      '</div>'+
+      '</div>';
+  }).join('');
+}
+async function toggleWaEmail(id, active){
+  try{await apiPut('whatsapp-emails/'+id,{active});loadWaEmails();}catch(e){console.error(e)}
+}
+async function deleteWaEmail(id){
+  if(!confirm('Remove this WhatsApp support email?'))return;
+  try{await apiDel('whatsapp-emails/'+id);loadWaEmails();}catch(e){alert('Error: '+(e.error||e.message))}
+}
+async function addWaEmail(){
+  const email=prompt('WhatsApp Support Email:');
+  if(!email||!email.includes('@')){alert('Valid email required');return}
+  const label=prompt('Label (e.g. Abuse Team):')||'Custom';
+  try{await api('whatsapp-emails',{email,label});loadWaEmails();}catch(e){alert('Error: '+(e.error||e.message))}
+}
+
+// ========================
+// INIT
+// ========================
 loadExistingSessions();
+loadPrompts();
+loadWaEmails();
 </script>
 </body>
 </html>
