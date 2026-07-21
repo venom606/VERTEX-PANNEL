@@ -696,6 +696,37 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
+// ===================== EMAIL FIX (Add here) =====================
+const nodemailer = require('nodemailer');
+
+const emailTransporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+});
+
+async function sendReportEmail(to, subject, body) {
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        log('Email config missing - add EMAIL_USER and EMAIL_PASS in Railway Variables');
+        return false;
+    }
+    try {
+        await emailTransporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: to,
+            subject: subject,
+            text: body
+        });
+        log(`Email sent successfully to ${to}`);
+        return true;
+    } catch (e) {
+        log(`Email send FAILED: ${e.message}`);
+        return false;
+    }
+}
+// ============================================================
 // ========================
 // STARTUP
 // ========================
