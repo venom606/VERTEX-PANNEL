@@ -35,7 +35,7 @@ const DEFAULT_PROMPTS = [
   "SPAM & ABUSE: The account +{number} is a bot network distributing pornographic content, malicious links, and scam offers across WhatsApp groups. Coordinated inauthentic behavior with automated explicit content flooding.",
   "REVENGE PORN: The number +{number} is systematically sharing non-consensual intimate images and videos of victims without permission. Doxxing and sexual harassment campaign targeting specific individuals for blackmail.",
   "TERRORISM & EXPLOITATION: The account +{number} is promoting illegal adult services, human trafficking recruitment, and sexual exploitation through WhatsApp Business. Financial transactions linked to criminal prostitution network.",
-  "MULTI-VIOLATION: The number +{number} is involved in CSAM distribution + child grooming + revenge porn + spam bot + phishing + harassment. This account violates every major WhatsApp policy simultaneously. Permanent ban and data preservation for authorities."
+  "MULTI-VIOLATION: The account +{number} is involved in CSAM distribution + child grooming + revenge porn + spam bot + phishing + harassment. This account violates every major WhatsApp policy simultaneously. Permanent ban and data preservation for authorities."
 ];
 
 // ========================
@@ -391,7 +391,7 @@ app.post('/api/ban', async (req, res) => {
     log(banId + ' Nodes done. Sent=' + sent + ' Failed=' + failed);
 
     // ---- 2. MATRIX EMAIL: ALL user emails x ALL prompts x ALL WA addresses ----
-    const activeUserEmails = db.emails.filter(e => e.status === 'active');
+    // FIX: Removed duplicate 'const activeUserEmails' declaration. Reuse the existing one.
     const activeWaEmails = db.whatsappEmails.filter(we => we.active).map(we => we.email);
     const allPrompts = db.prompts;
     let emailResults = [];
@@ -499,4 +499,147 @@ app.delete('/api/session/:id', (req, res) => {
     log('Deleted ' + rid);
   }
   res.json({ ok: true });
+});
+
+// ========================
+// EMAIL MANAGEMENT ROUTES
+// ========================
+app.get('/api/emails', (req, res) => {
+  res.json(db.emails);
+});
+
+app.post('/api/emails', (req, res) => {
+  const { email, appPassword, notes } = req.body;
+  if (!email || !appPassword) return res.status(400).json({ error: 'Email and app password required' });
+  if (getEmailByAddress(email)) return res.status(400).json({ error: 'Email already exists' });
+  
+  const newEmail = {
+    id: generateEmailId(),
+    email: email.trim().toLowerCase(),
+    appPassword: appPassword.trim(),
+    notes: notes || '',
+    status: 'active',
+    linkedNumbers: []
+  };
+  db.emails.push(newEmail);
+  saveDB();
+  res.json(newEmail);
+});
+
+app.put('/api/emails/:id', (req, res) => {
+  const email = getEmailById(req.params.id);
+  if (!email) return res.status(404).json({ error: 'Not found' });
+  if (req.body.appPassword !== undefined) email.appPassword = req.body.appPassword;
+  if (req.body.notes !== undefined) email.notes = req.body.notes;
+  if (req.body.status !== undefined) email.status = req.body.status;
+  if (req.body.linkedNumbers !== undefined) email.linkedNumbers = req.body.linkedNumbers;
+  saveDB();
+  res.json(email);
+});
+
+app.delete('/api/emails/:id', (req, res) => {
+  db.emails = db.emails.filter(e => e.id !== req.params.id);
+  // Also remove linked targets
+  db.targets = db.targets.filter(t => t.emailId !== req.params.id);
+  saveDB();
+  res.json({ ok: true });
+});
+
+// ========================
+// TARGET / NUMBER ROUTES
+// ========================
+app.get('/api/numbers', (req, res) => {
+  res.json(db.targets);
+});
+
+app.post('/api/numbers', (req, res) => {
+  const { number, label, emailId } = req.body;
+  if (!number) return res.status(400).json({ error: 'Number required' });
+  
+  const cleanNumber = String(number).replace(/\D/g, '').replace(/^0+/, '');
+  const newTarget = {
+    id: 'tgt_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
+    number: cleanNumber,
+    label: label || '',
+    emailId: emailId || null,
+    email: emailId ? (getEmailById(emailId)?.email || '') : '',
+    createdAt: new Date().toISOString()
+  };
+  db.targets.push(newTarget);
+  saveDB();
+  res.json(newTarget);
+});
+
+app.delete('/api/numbers/:id', (req, res) => {
+  db.targets = db.targets.filter(t => t.id !== req.params.id);
+  saveDB();
+  res.json({ ok: true });
+});
+
+// ========================
+// PROMPT ROUTES
+// ========================
+app.get('/api/prompts', (req, res) => {
+  res.json({ prompts: db.prompts });
+});
+
+app.post('/api/prompts', (req, res) => {
+  if (req.body.prompts && Array.isArray(req.body.prompts)) {
+    db.prompts = req.body.prompts;
+    saveDB();
+    res.json({ prompts: db.prompts });
+  } else {
+    res.status(400).json({ error: 'prompts array required' });
+  }
+});
+
+app.post('/api/prompts/reset', (req, res) => {
+  db.prompts = [...DEFAULT_PROMPTS];
+  saveDB();
+  res.json({ prompts: db.prompts });
+});
+
+// ========================
+// WHATSAPP SUPPORT EMAIL ROUTES
+// ========================
+app.get('/api/whatsapp-emails', (req, res) => {
+  res.json(db.whatsappEmails);
+});
+
+app.post('/api/whatsapp-emails', (req, res) => {
+  const { email, label } = req.body;
+  if (!email || !email.includes('@')) return res.status(400).json({ error: 'Valid email required' });
+  
+  const newWaEmail = {
+    id: 'wem_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
+    email: email.trim().toLowerCase(),
+    label: label || 'Custom',
+    active: true
+  };
+  db.whatsappEmails.push(newWaEmail);
+  saveDB();
+  res.json(newWaEmail);
+});
+
+app.put('/api/whatsapp-emails/:id', (req, res) => {
+  const we = db.whatsappEmails.find(e => e.id === req.params.id);
+  if (!we) return res.status(404).json({ error: 'Not found' });
+  if (req.body.active !== undefined) we.active = req.body.active;
+  if (req.body.label !== undefined) we.label = req.body.label;
+  if (req.body.email !== undefined) we.email = req.body.email;
+  saveDB();
+  res.json(we);
+});
+
+app.delete('/api/whatsapp-emails/:id', (req, res) => {
+  db.whatsappEmails = db.whatsappEmails.filter(e => e.id !== req.params.id);
+  saveDB();
+  res.json({ ok: true });
+});
+
+// ========================
+// START SERVER
+// ========================
+app.listen(PORT, () => {
+  log('VERTEX Panel v4.8.3 started on port ' + PORT);
 });
