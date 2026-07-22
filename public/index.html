@@ -122,7 +122,7 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
             <div class="text-gray-500">WA Addresses</div>
           </div>
         </div>
-        <p class="text-xs text-gray-500 mt-2">Every email sends every prompt to every WA address. Target number auto-inserted into each prompt.</p>
+        <p class="text-xs text-gray-500 mt-2">ALL active emails send ALL prompts to ALL WA addresses. Target number auto-inserted into each prompt via {number}.</p>
       </div>
       <button onclick="executeBan()" id="btn-exec" class="w-full py-3 bg-accent-600 hover:bg-accent-700 disabled:bg-dark-600 disabled:text-gray-600 text-white font-semibold rounded-lg transition text-sm" disabled>EXECUTE BAN</button>
     </div>
@@ -140,11 +140,11 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
   <!-- EMAILS TAB -->
   <div id="panel-emails" class="hidden">
     <div class="flex items-center justify-between mb-4">
-      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Email Accounts (SMTP Senders) — Unlimited</h2>
+      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">SMTP Sender Emails — Unlimited</h2>
       <button onclick="openEmailModal()" class="px-3 py-1.5 bg-gold-600 hover:bg-gold-500 text-white text-xs font-medium rounded-lg transition">+ Add Email</button>
     </div>
     <div class="bg-dark-800 rounded-xl border border-dark-600 p-4 mb-6 glow-gold">
-      <p class="text-xs text-gray-500">Add unlimited emails with App Passwords. Each email will send ALL prompts to ALL WhatsApp support addresses. Use {number} in prompts for auto-insertion.</p>
+      <p class="text-xs text-gray-500">Add unlimited emails with App Passwords. ALL active emails will send ALL prompts to ALL WhatsApp support addresses when you execute a ban. Use {number} in prompts for auto-insertion.</p>
     </div>
     <div id="email-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       <div id="empty-emails" class="col-span-full text-center py-12 text-gray-600 text-sm">No emails added yet. Click "+ Add Email" to start.</div>
@@ -158,12 +158,9 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
       <button onclick="openNumberModal()" class="px-3 py-1.5 bg-gold-600 hover:bg-gold-500 text-white text-xs font-medium rounded-lg transition">+ Add Target</button>
     </div>
     <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-6 glow-gold">
-      <h3 class="text-xs text-gray-500 mb-3">Quick Add Target + Link to Email</h3>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <h3 class="text-xs text-gray-500 mb-3">Quick Add Target Number</h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
         <input id="ql-number" type="text" placeholder="Phone number (e.g. 94771234567)" class="bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
-        <select id="ql-email" class="bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-gold-600">
-          <option value="">Select email...</option>
-        </select>
         <input id="ql-label" type="text" placeholder="Label (optional)" class="bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
       </div>
       <button onclick="quickLinkNumber()" class="mt-3 px-4 py-2 bg-gold-600 hover:bg-gold-500 text-white text-xs font-medium rounded-lg transition">Add Target</button>
@@ -387,17 +384,16 @@ async function executeBan(){
   const linked=sessions.filter(s=>s.status==='linked'&&s.selected);
   if(!linked.length)return;
   let target;
+  let targetNumber='';
   if(banType==='number'){
-    let n=document.getElementById('target-number').value.replace(/\D/g,'');
-    if(n.startsWith('0'))n=n.substring(1);
-    target=n+'@s.whatsapp.net';
+    targetNumber=document.getElementById('target-number').value.replace(/\D/g,'');
+    if(targetNumber.startsWith('0'))targetNumber=targetNumber.substring(1);
+    target=targetNumber+'@s.whatsapp.net';
   }else{
     if(!groupJid){alert('Resolve group first');return}
     target=groupJid;
   }
   if(!target||target==='@s.whatsapp.net'){alert('Enter a valid target');return}
-
-  const targetNumber=document.getElementById('target-number').value.replace(/\D/g,'');
 
   const btn=document.getElementById('btn-exec');btn.disabled=true;btn.textContent='SENDING...';
   const rs=document.getElementById('results-section');const rl=document.getElementById('results-list');const si=document.getElementById('sending-indicator');const sm=document.getElementById('results-summary');
@@ -444,12 +440,20 @@ function updateMatrixPreview(){
   document.getElementById('matrix-wa').textContent=activeWa;
   document.getElementById('matrix-total').textContent=total+' emails total';
 }
+function updateEmailReportPreview(){
+  const activeEmails=emails.filter(e=>e.status==='active').length;
+  const activeWa=waEmails.filter(we=>we.active).length;
+  const activePrompts=prompts.length;
+  const total=activeEmails*activePrompts*activeWa;
+  const el=document.getElementById('email-report-preview');
+  if(el)el.innerHTML='Will send <span class="text-white font-bold">'+total+'</span> emails using <span class="text-white">'+activeEmails+'</span> accounts to <span class="text-white">'+activeWa+'</span> addresses with <span class="text-white">'+activePrompts+'</span> prompts';
+}
 
 // ========================
 // EMAIL MANAGEMENT (UNLIMITED)
 // ========================
 async function loadEmails(){
-  try{emails=await apiGet('emails');renderEmails();updateEmailSelects();updateMatrixPreview();}catch(e){console.error('loadEmails error',e)}
+  try{emails=await apiGet('emails');renderEmails();updateMatrixPreview();}catch(e){console.error('loadEmails error',e)}
 }
 function renderEmails(){
   const grid=document.getElementById('email-grid');
@@ -461,10 +465,7 @@ function renderEmails(){
   }).join('');
 }
 function maskPassword(pw){if(!pw)return'—';if(pw.length<=8)return'*'.repeat(pw.length);return pw.substring(0,2)+'*'.repeat(pw.length-4)+pw.substring(pw.length-2);}
-function updateEmailSelects(){
-  const selects=document.querySelectorAll('select[id="ql-email"]');
-  selects.forEach(sel=>{sel.innerHTML='<option value="">Select email...</option>'+emails.map(e=>'<option value="'+e.id+'">'+e.email+'</option>').join('');});
-}
+
 function openEmailModal(){
   document.getElementById('email-modal-title').textContent='Add Email';
   document.getElementById('email-edit-id').value='';
@@ -527,7 +528,7 @@ function selectTarget(id){
   setBanType('number');
   const badge=document.getElementById('active-target-badge');
   badge.classList.remove('hidden');
-  badge.innerHTML='Target: <span class="font-bold">+'+t.number+'</span> via '+t.email;
+  badge.innerHTML='Target: <span class="font-bold">+'+t.number+'</span>'+(t.label?' · '+t.label:'');
   switchTab('sessions');
   renderNumbers();
 }
@@ -537,14 +538,13 @@ async function deleteTarget(id){
 }
 async function quickLinkNumber(){
   const number=document.getElementById('ql-number').value.trim();
-  const emailId=document.getElementById('ql-email').value;
   const label=document.getElementById('ql-label').value.trim();
-  if(!number||!emailId){alert('Number and Email required');return}
+  if(!number){alert('Number required');return}
   try{
-    await api('numbers',{number,emailId,label});
+    await api('numbers',{number,label});
     document.getElementById('ql-number').value='';
     document.getElementById('ql-label').value='';
-    loadNumbers();loadEmails();
+    loadNumbers();
   }catch(e){alert('Error: '+(e.error||e.message))}
 }
 function openNumberModal(){switchTab('numbers');document.getElementById('ql-number').focus();}
