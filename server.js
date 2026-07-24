@@ -105,42 +105,56 @@ function getEmailById(id) { return db.emails.find(e => e.id === id); }
 function getEmailByAddress(address) { return db.emails.find(e => e.email.toLowerCase() === address.toLowerCase()); }
 
 // ========================
-// SMTP / EMAIL SENDING (with fallback & enhanced timeouts)
+// SMTP / EMAIL SENDING (with custom SMTP per email)
 // ========================
-function getSMTPConfig(email) {
-  const domain = email.split('@')[1].toLowerCase();
-  if (domain.includes('yahoo')) return { host: 'smtp.mail.yahoo.com', port: 465, secure: true };
-  if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live')) return { host: 'smtp-mail.outlook.com', port: 587, secure: false };
-  if (domain.includes('icloud') || domain.includes('me.com')) return { host: 'smtp.mail.me.com', port: 587, secure: false };
-  if (domain.includes('yandex')) return { host: 'smtp.yandex.com', port: 465, secure: true };
-  if (domain.includes('zoho')) return { host: 'smtp.zoho.com', port: 587, secure: false };
-  // Gmail default – will also try fallback 587 if 465 fails
-  return { host: 'smtp.gmail.com', port: 465, secure: true, fallbackPort: 587, fallbackSecure: false };
-}
-
-async function sendEmailViaSMTP(fromEmail, fromPassword, toAddress, subject, htmlBody, textBody) {
+async function sendEmailViaSMTP(emailObj, toAddress, subject, htmlBody, textBody) {
   return new Promise(async (resolve) => {
-    const cfg = getSMTPConfig(fromEmail);
-    // Build a list of configs to try (primary + optional fallback)
-    const configs = [
-      { host: cfg.host, port: cfg.port, secure: cfg.secure },
-    ];
-    if (cfg.fallbackPort) {
-      configs.push({ host: cfg.host, port: cfg.fallbackPort, secure: cfg.fallbackSecure });
+    const fromEmail = emailObj.email;
+    const pass = emailObj.appPassword;
+
+    let configs = [];
+    if (emailObj.smtpHost && emailObj.smtpPort) {
+      // Custom config
+      configs.push({
+        host: emailObj.smtpHost,
+        port: parseInt(emailObj.smtpPort),
+        secure: emailObj.smtpSecure === true || emailObj.smtpSecure === 'true',
+        user: emailObj.smtpUser || fromEmail,
+        pass: pass,
+        label: 'custom'
+      });
+    } else {
+      // Auto-detect based on domain
+      const domain = fromEmail.split('@')[1].toLowerCase();
+      let cfg;
+      if (domain.includes('yahoo')) cfg = { host: 'smtp.mail.yahoo.com', port: 465, secure: true };
+      else if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live')) cfg = { host: 'smtp-mail.outlook.com', port: 587, secure: false };
+      else if (domain.includes('icloud') || domain.includes('me.com')) cfg = { host: 'smtp.mail.me.com', port: 587, secure: false };
+      else if (domain.includes('yandex')) cfg = { host: 'smtp.yandex.com', port: 465, secure: true };
+      else if (domain.includes('zoho')) cfg = { host: 'smtp.zoho.com', port: 587, secure: false };
+      else {
+        // Gmail default with fallback
+        cfg = { host: 'smtp.gmail.com', port: 465, secure: true, fallbackPort: 587, fallbackSecure: false };
+      }
+      configs.push({ host: cfg.host, port: cfg.port, secure: cfg.secure, user: fromEmail, pass: pass, label: 'primary' });
+      if (cfg.fallbackPort) {
+        configs.push({ host: cfg.host, port: cfg.fallbackPort, secure: cfg.fallbackSecure, user: fromEmail, pass: pass, label: 'fallback' });
+      }
     }
 
     let lastError = null;
     for (const conf of configs) {
       try {
+        log(`SMTP attempt to ${conf.host}:${conf.port} (secure:${conf.secure}) using ${conf.user}`);
         const transporter = nodemailer.createTransport({
           host: conf.host,
           port: conf.port,
           secure: conf.secure,
-          auth: { user: fromEmail, pass: fromPassword },
+          auth: { user: conf.user, pass: conf.pass },
           tls: { rejectUnauthorized: false },
-          connectionTimeout: 45000,
-          greetingTimeout: 45000,
-          socketTimeout: 45000,
+          connectionTimeout: 60000,
+          greetingTimeout: 60000,
+          socketTimeout: 60000,
         });
 
         const info = await transporter.sendMail({
@@ -153,14 +167,13 @@ async function sendEmailViaSMTP(fromEmail, fromPassword, toAddress, subject, htm
 
         transporter.close();
         resolve({ to: toAddress, ok: true, id: info.messageId });
-        return; // success
+        return;
       } catch (e) {
         lastError = e.message;
         log(`SMTP attempt to ${conf.host}:${conf.port} (secure:${conf.secure}) failed: ${e.message}`);
-        // Continue to next config if any
+        // continue to next config
       }
     }
-    // All attempts failed
     resolve({ to: toAddress, ok: false, error: lastError || 'All SMTP attempts failed' });
   });
 }
@@ -427,7 +440,7 @@ app.post('/api/ban', async (req, res) => {
           const { subject, textBody, htmlBody } = buildEmailBodies(targetNumber, promptText, userEmail.email);
 
           for (const waEmail of activeWaEmails) {
-            const result = await sendEmailViaSMTP(userEmail.email, userEmail.appPassword, waEmail, subject, htmlBody, textBody);
+            const result = await sendEmailViaSMTP(userEmail, waEmail, subject, htmlBody, textBody);
             emailResults.push({ from: userEmail.email, to: waEmail, prompt: promptText.substring(0, 40), ...result });
             if (result.ok) {
               log('Email SENT: ' + userEmail.email + ' -> ' + waEmail);
@@ -495,7 +508,7 @@ app.post('/api/ban', async (req, res) => {
 });
 
 // ========================
-// NEW: PURE EMAIL REPORT (NO SESSION REQUIRED)
+// PURE EMAIL REPORT (NO SESSION REQUIRED)
 // ========================
 app.post('/api/email-report', async (req, res) => {
   const { targetNumber } = req.body;
@@ -513,23 +526,23 @@ app.post('/api/email-report', async (req, res) => {
   let totalSent = 0;
   let totalFailed = 0;
 
-  for (const userEmail of activeUserEmails) {
-    if (!userEmail.appPassword) {
-      log('Skipping email ' + userEmail.email + ': no app password');
+  for (const userEmailObj of activeUserEmails) {
+    if (!userEmailObj.appPassword) {
+      log('Skipping email ' + userEmailObj.email + ': no app password');
       continue;
     }
     for (const promptTemplate of allPrompts) {
       const promptText = promptTemplate.replace(/\{number\}/g, targetNumber);
-      const { subject, textBody, htmlBody } = buildEmailBodies(targetNumber, promptText, userEmail.email);
+      const { subject, textBody, htmlBody } = buildEmailBodies(targetNumber, promptText, userEmailObj.email);
       for (const waEmail of activeWaEmails) {
-        const result = await sendEmailViaSMTP(userEmail.email, userEmail.appPassword, waEmail, subject, htmlBody, textBody);
-        results.push({ from: userEmail.email, to: waEmail, prompt: promptText.substring(0, 40), ...result });
+        const result = await sendEmailViaSMTP(userEmailObj, waEmail, subject, htmlBody, textBody);
+        results.push({ from: userEmailObj.email, to: waEmail, prompt: promptText.substring(0, 40), ...result });
         if (result.ok) {
           totalSent++;
-          log('Email SENT (email-report): ' + userEmail.email + ' -> ' + waEmail);
+          log('Email SENT (email-report): ' + userEmailObj.email + ' -> ' + waEmail);
         } else {
           totalFailed++;
-          log('Email FAIL (email-report): ' + userEmail.email + ' -> ' + waEmail + ' | ' + result.error);
+          log('Email FAIL (email-report): ' + userEmailObj.email + ' -> ' + waEmail + ' | ' + result.error);
         }
         await new Promise(r => setTimeout(r, 500 + Math.floor(Math.random() * 1000)));
       }
@@ -564,14 +577,14 @@ app.delete('/api/session/:id', (req, res) => {
 });
 
 // ========================
-// EMAIL MANAGEMENT ROUTES
+// EMAIL MANAGEMENT ROUTES (updated to handle SMTP fields)
 // ========================
 app.get('/api/emails', (req, res) => {
   res.json(db.emails);
 });
 
 app.post('/api/emails', (req, res) => {
-  const { email, appPassword, notes } = req.body;
+  const { email, appPassword, notes, smtpHost, smtpPort, smtpSecure, smtpUser } = req.body;
   if (!email || !appPassword) return res.status(400).json({ error: 'Email and app password required' });
   if (getEmailByAddress(email)) return res.status(400).json({ error: 'Email already exists' });
   
@@ -581,7 +594,12 @@ app.post('/api/emails', (req, res) => {
     appPassword: appPassword.trim(),
     notes: notes || '',
     status: 'active',
-    linkedNumbers: []
+    linkedNumbers: [],
+    // SMTP custom fields
+    smtpHost: smtpHost || '',
+    smtpPort: smtpPort ? parseInt(smtpPort) : null,
+    smtpSecure: smtpSecure === true || smtpSecure === 'true',
+    smtpUser: smtpUser || '',
   };
   db.emails.push(newEmail);
   saveDB();
@@ -595,6 +613,10 @@ app.put('/api/emails/:id', (req, res) => {
   if (req.body.notes !== undefined) email.notes = req.body.notes;
   if (req.body.status !== undefined) email.status = req.body.status;
   if (req.body.linkedNumbers !== undefined) email.linkedNumbers = req.body.linkedNumbers;
+  if (req.body.smtpHost !== undefined) email.smtpHost = req.body.smtpHost;
+  if (req.body.smtpPort !== undefined) email.smtpPort = req.body.smtpPort ? parseInt(req.body.smtpPort) : null;
+  if (req.body.smtpSecure !== undefined) email.smtpSecure = req.body.smtpSecure === true || req.body.smtpSecure === 'true';
+  if (req.body.smtpUser !== undefined) email.smtpUser = req.body.smtpUser;
   saveDB();
   res.json(email);
 });
