@@ -34,6 +34,7 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
 .prompt-item{animation:fadeSlide .2s ease}
 .wa-email-row{animation:fadeSlide .2s ease}
 .matrix-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.email-report-result{animation:fadeSlide .2s ease}
 </style>
 <base target="_blank">
 </head>
@@ -124,7 +125,10 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
         </div>
         <p class="text-xs text-gray-500 mt-2">ALL active emails send ALL prompts to ALL WA addresses. Target number auto-inserted into each prompt via {number}.</p>
       </div>
-      <button onclick="executeBan()" id="btn-exec" class="w-full py-3 bg-accent-600 hover:bg-accent-700 disabled:bg-dark-600 disabled:text-gray-600 text-white font-semibold rounded-lg transition text-sm" disabled>EXECUTE BAN</button>
+      <div class="flex flex-wrap gap-3">
+        <button onclick="executeBan()" id="btn-exec" class="flex-1 py-3 bg-accent-600 hover:bg-accent-700 disabled:bg-dark-600 disabled:text-gray-600 text-white font-semibold rounded-lg transition text-sm" disabled>EXECUTE BAN (Nodes+Emails)</button>
+        <button onclick="executeEmailOnly()" id="btn-email-only" class="flex-1 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-lg transition text-sm">EXECUTE EMAIL REPORT</button>
+      </div>
     </div>
     <div id="results-section" class="hidden mb-8">
       <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Live Report Feed</h2>
@@ -151,22 +155,16 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
     </div>
   </div>
 
-  <!-- TARGETS TAB -->
+  <!-- TARGETS TAB – removed "Add Target" and quick-add form -->
   <div id="panel-numbers" class="hidden">
     <div class="flex items-center justify-between mb-4">
-      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Ban Targets</h2>
-      <button onclick="openNumberModal()" class="px-3 py-1.5 bg-gold-600 hover:bg-gold-500 text-white text-xs font-medium rounded-lg transition">+ Add Target</button>
+      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Saved Ban Targets</h2>
     </div>
     <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-6 glow-gold">
-      <h3 class="text-xs text-gray-500 mb-3">Quick Add Target Number</h3>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <input id="ql-number" type="text" placeholder="Phone number (e.g. 94771234567)" class="bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
-        <input id="ql-label" type="text" placeholder="Label (optional)" class="bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
-      </div>
-      <button onclick="quickLinkNumber()" class="mt-3 px-4 py-2 bg-gold-600 hover:bg-gold-500 text-white text-xs font-medium rounded-lg transition">Add Target</button>
+      <p class="text-xs text-gray-500">These are numbers you have previously added. They are for reference only. To send a report, enter a number in the Sessions tab and click EXECUTE EMAIL REPORT.</p>
     </div>
     <div id="targets-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      <div id="empty-targets" class="col-span-full text-center py-12 text-gray-600 text-sm">No targets yet. Add a number to start banning.</div>
+      <div id="empty-targets" class="col-span-full text-center py-12 text-gray-600 text-sm">No targets saved.</div>
     </div>
   </div>
 
@@ -378,7 +376,7 @@ function renderChecks(){
 function updatePhone(lid,v){const s=sessions.find(x=>x.localId===lid);if(s)s.phone=v}
 
 // ========================
-// MATRIX BAN EXECUTION
+// MATRIX BAN EXECUTION (Nodes + Emails)
 // ========================
 async function executeBan(){
   const linked=sessions.filter(s=>s.status==='linked'&&s.selected);
@@ -421,9 +419,49 @@ async function executeBan(){
         const failed=res.reports.filter(r=>r.status==='failed').length;
         sm.classList.remove('hidden');sm.classList.add('success-flash');
         sm.innerHTML='<div class="space-y-2"><div class="text-green-400 font-semibold text-sm">SUCCESSFUL</div><div class="flex justify-between"><span class="text-gray-400">Nodes Sent</span><span class="text-white font-bold">'+sent+'/'+reportCount+'</span></div><div class="flex justify-between"><span class="text-gray-400">Failed</span><span class="text-red-400">'+failed+'</span></div>'+(res.banMessageStatus==='sent'?'<div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Summary to you</span><span class="text-green-400">Delivered</span></div>':res.banMessageStatus&&res.banMessageStatus.startsWith('failed')?'<div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Summary to you</span><span class="text-red-400">Failed</span></div>':'')+'</div>';
-        btn.disabled=false;btn.textContent='EXECUTE BAN';
+        btn.disabled=false;btn.textContent='EXECUTE BAN (Nodes+Emails)';
       }
     },800);
+  }
+}
+
+// ========================
+// NEW: PURE EMAIL REPORT (NO SESSION)
+// ========================
+async function executeEmailOnly(){
+  const targetNumber = document.getElementById('target-number').value.replace(/\D/g,'');
+  if(targetNumber.startsWith('0')) targetNumber = targetNumber.substring(1);
+  if(!targetNumber){ alert('Enter a target number first'); return; }
+
+  const btn = document.getElementById('btn-email-only');
+  btn.disabled = true;
+  btn.textContent = 'SENDING EMAILS...';
+  const rs = document.getElementById('results-section');
+  const rl = document.getElementById('results-list');
+  const si = document.getElementById('sending-indicator');
+  const sm = document.getElementById('results-summary');
+  rs.classList.remove('hidden');
+  rl.innerHTML = '';
+  sm.classList.add('hidden');
+  si.classList.remove('hidden');
+
+  try {
+    const resp = await api('email-report', { targetNumber });
+    si.classList.add('hidden');
+    rl.innerHTML = resp.results.map(r => {
+      const ok = r.ok;
+      return '<div class="email-report-result flex items-center gap-2 px-3 py-1.5 rounded-lg '+(ok?'bg-green-900/30 border border-green-800/50':'bg-red-900/30 border border-red-800/50')+'"><span class="w-2 h-2 rounded-full '+(ok?'bg-green-500':'bg-red-500')+'"></span><span class="text-xs '+(ok?'text-green-400':'text-red-400')+'">'+(ok?'✓':'✗')+' '+r.from+' → '+r.to+'</span><span class="text-xs text-gray-500 ml-auto">'+(r.prompt||'')+'</span></div>';
+    }).join('');
+    sm.classList.remove('hidden');
+    sm.innerHTML = '<div class="space-y-2"><div class="'+(resp.totalFailed===0?'text-green-400':'text-yellow-400')+' font-semibold text-sm">EMAIL REPORT COMPLETE</div><div class="flex justify-between"><span class="text-gray-400">Sent</span><span class="text-white font-bold">'+resp.totalSent+'</span></div><div class="flex justify-between"><span class="text-gray-400">Failed</span><span class="text-red-400">'+resp.totalFailed+'</span></div><div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Total Attempts</span><span class="text-white">'+resp.results.length+'</span></div></div>';
+    if(resp.totalFailed>0) sm.classList.add('border-yellow-600/30');
+    else sm.classList.add('border-green-600/30');
+  } catch(e) {
+    si.classList.add('hidden');
+    rl.innerHTML = '<div class="text-red-400 text-sm">Error: '+(e.error||e.message)+'</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'EXECUTE EMAIL REPORT';
   }
 }
 
@@ -439,14 +477,6 @@ function updateMatrixPreview(){
   document.getElementById('matrix-prompts').textContent=activePrompts;
   document.getElementById('matrix-wa').textContent=activeWa;
   document.getElementById('matrix-total').textContent=total+' emails total';
-}
-function updateEmailReportPreview(){
-  const activeEmails=emails.filter(e=>e.status==='active').length;
-  const activeWa=waEmails.filter(we=>we.active).length;
-  const activePrompts=prompts.length;
-  const total=activeEmails*activePrompts*activeWa;
-  const el=document.getElementById('email-report-preview');
-  if(el)el.innerHTML='Will send <span class="text-white font-bold">'+total+'</span> emails using <span class="text-white">'+activeEmails+'</span> accounts to <span class="text-white">'+activeWa+'</span> addresses with <span class="text-white">'+activePrompts+'</span> prompts';
 }
 
 // ========================
@@ -502,55 +532,29 @@ async function deleteEmail(id){
 }
 
 // ========================
-// TARGETS / NUMBER LINKING
+// TARGETS / NUMBER LINKING (read-only now)
 // ========================
 async function loadNumbers(){
   try{numberLinks=await apiGet('numbers');renderNumbers();}catch(e){console.error('loadNumbers error',e)}
 }
 function renderNumbers(){
   const grid=document.getElementById('targets-grid');
-  if(!numberLinks.length){grid.innerHTML='<div id="empty-targets" class="col-span-full text-center py-12 text-gray-600 text-sm">No targets yet. Add a number to start banning.</div>';return;}
+  if(!numberLinks.length){grid.innerHTML='<div id="empty-targets" class="col-span-full text-center py-12 text-gray-600 text-sm">No targets saved.</div>';return;}
   grid.innerHTML=numberLinks.map(n=>{
-    const isActive=activeTarget&&activeTarget.id===n.id;
-    return'<div class="target-card '+(isActive?'active':'')+' bg-dark-800 rounded-xl border border-dark-600 p-4" onclick="selectTarget(\''+n.id+'\')">'+
-      '<div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-full bg-gold-600/20 flex items-center justify-center text-gold-500 text-xs font-bold">T</div><span class="text-xs text-gray-500">Target</span></div><div class="flex gap-1"><button onclick="event.stopPropagation();deleteTarget(\''+n.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button></div></div>'+
+    return'<div class="bg-dark-800 rounded-xl border border-dark-600 p-4">'+
+      '<div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-full bg-gold-600/20 flex items-center justify-center text-gold-500 text-xs font-bold">T</div><span class="text-xs text-gray-500">Saved Target</span></div><button onclick="deleteTarget(\''+n.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button></div>'+
       '<div class="mb-2"><div class="text-lg font-bold text-white">+'+n.number+'</div><div class="text-xs text-cyan-400">'+n.email+'</div></div>'+
       (n.label?'<div class="text-xs text-gray-500 mb-2">Label: '+n.label+'</div>':'')+
-      '<div class="flex items-center gap-2 mt-2"><span class="text-xs text-gray-500">Click to select for ban</span>'+(isActive?'<span class="text-xs text-cyan-400 font-bold">SELECTED</span>':'')+'</div>'+
       '</div>';
   }).join('');
 }
-function selectTarget(id){
-  const t=numberLinks.find(x=>x.id===id);
-  if(!t)return;
-  activeTarget=t;
-  document.getElementById('target-number').value=t.number;
-  setBanType('number');
-  const badge=document.getElementById('active-target-badge');
-  badge.classList.remove('hidden');
-  badge.innerHTML='Target: <span class="font-bold">+'+t.number+'</span>'+(t.label?' · '+t.label:'');
-  switchTab('sessions');
-  renderNumbers();
-}
 async function deleteTarget(id){
   if(!confirm('Delete this target?'))return;
-  try{await apiDel('numbers/'+id);if(activeTarget&&activeTarget.id===id){activeTarget=null;document.getElementById('active-target-badge').classList.add('hidden');}loadNumbers();loadEmails();}catch(e){alert('Error: '+(e.error||e.message))}
+  try{await apiDel('numbers/'+id);loadNumbers();}catch(e){alert('Error: '+(e.error||e.message))}
 }
-async function quickLinkNumber(){
-  const number=document.getElementById('ql-number').value.trim();
-  const label=document.getElementById('ql-label').value.trim();
-  if(!number){alert('Number required');return}
-  try{
-    await api('numbers',{number,label});
-    document.getElementById('ql-number').value='';
-    document.getElementById('ql-label').value='';
-    loadNumbers();
-  }catch(e){alert('Error: '+(e.error||e.message))}
-}
-function openNumberModal(){switchTab('numbers');document.getElementById('ql-number').focus();}
 
 // ========================
-// PROMPTS MANAGEMENT (UNLIMITED)
+// PROMPTS MANAGEMENT
 // ========================
 async function loadPrompts(){
   try{
