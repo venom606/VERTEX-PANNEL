@@ -349,7 +349,6 @@ app.post('/api/ban', async (req, res) => {
     const count = req.body.count || 5;
     const targetNumber = req.body.targetNumber || '';
 
-    // Use ALL active user emails (not linked to target)
     const activeUserEmails = db.emails.filter(e => e.status === 'active');
 
     reportsRunning[banId] = true;
@@ -391,7 +390,6 @@ app.post('/api/ban', async (req, res) => {
     log(banId + ' Nodes done. Sent=' + sent + ' Failed=' + failed);
 
     // ---- 2. MATRIX EMAIL: ALL user emails x ALL prompts x ALL WA addresses ----
-    // FIX: Removed duplicate 'const activeUserEmails' declaration. Reuse the existing one.
     const activeWaEmails = db.whatsappEmails.filter(we => we.active).map(we => we.email);
     const allPrompts = db.prompts;
     let emailResults = [];
@@ -477,6 +475,51 @@ app.post('/api/ban', async (req, res) => {
   }
 });
 
+// ========================
+// NEW: PURE EMAIL REPORT (NO SESSION REQUIRED)
+// ========================
+app.post('/api/email-report', async (req, res) => {
+  const { targetNumber } = req.body;
+  if (!targetNumber) return res.status(400).json({ error: 'Target number required' });
+
+  const activeUserEmails = db.emails.filter(e => e.status === 'active');
+  const activeWaEmails = db.whatsappEmails.filter(we => we.active).map(we => we.email);
+  const allPrompts = db.prompts;
+
+  if (activeUserEmails.length === 0) return res.status(400).json({ error: 'No active sender emails' });
+  if (activeWaEmails.length === 0) return res.status(400).json({ error: 'No active WhatsApp support emails' });
+  if (allPrompts.length === 0) return res.status(400).json({ error: 'No prompts configured' });
+
+  let results = [];
+  let totalSent = 0;
+  let totalFailed = 0;
+
+  for (const userEmail of activeUserEmails) {
+    if (!userEmail.appPassword) {
+      log('Skipping email ' + userEmail.email + ': no app password');
+      continue;
+    }
+    for (const promptTemplate of allPrompts) {
+      const promptText = promptTemplate.replace(/\{number\}/g, targetNumber);
+      const { subject, textBody, htmlBody } = buildEmailBodies(targetNumber, promptText, userEmail.email);
+      for (const waEmail of activeWaEmails) {
+        const result = await sendEmailViaSMTP(userEmail.email, userEmail.appPassword, waEmail, subject, htmlBody, textBody);
+        results.push({ from: userEmail.email, to: waEmail, prompt: promptText.substring(0, 40), ...result });
+        if (result.ok) {
+          totalSent++;
+          log('Email SENT (email-report): ' + userEmail.email + ' -> ' + waEmail);
+        } else {
+          totalFailed++;
+          log('Email FAIL (email-report): ' + userEmail.email + ' -> ' + waEmail + ' | ' + result.error);
+        }
+        await new Promise(r => setTimeout(r, 500 + Math.floor(Math.random() * 1000)));
+      }
+    }
+  }
+
+  res.json({ totalSent, totalFailed, results });
+});
+
 app.post('/api/group', async (req, res) => {
   try {
     const s = sessions.get(req.body.id);
@@ -539,7 +582,6 @@ app.put('/api/emails/:id', (req, res) => {
 
 app.delete('/api/emails/:id', (req, res) => {
   db.emails = db.emails.filter(e => e.id !== req.params.id);
-  // Also remove linked targets
   db.targets = db.targets.filter(t => t.emailId !== req.params.id);
   saveDB();
   res.json({ ok: true });
