@@ -21,6 +21,7 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 const sessions = new Map();
 const debugLog = [];
 const reportsRunning = {};
+const executions = new Map();
 
 // ========================
 // DEFAULT BAN PROMPTS (10 MAXIMUM POWER — with {number} placeholder)
@@ -61,7 +62,7 @@ function loadDB() {
       return JSON.parse(raw);
     }
   } catch (e) { log('DB load error: ' + e.message); }
-  return { emails: [], targets: [], whatsappEmails: DEFAULT_WHATSAPP_EMAILS, prompts: DEFAULT_PROMPTS, settings: {} };
+  return { emails: [], whatsappEmails: DEFAULT_WHATSAPP_EMAILS, prompts: DEFAULT_PROMPTS, settings: {} };
 }
 
 function saveDB() {
@@ -72,7 +73,6 @@ function saveDB() {
 
 let db = loadDB();
 if (!db.emails) db.emails = [];
-if (!db.targets) db.targets = [];
 if (!db.whatsappEmails || !db.whatsappEmails.length) db.whatsappEmails = DEFAULT_WHATSAPP_EMAILS;
 if (!db.prompts || !db.prompts.length) db.prompts = DEFAULT_PROMPTS;
 if (!db.settings) db.settings = {};
@@ -121,8 +121,7 @@ async function sendEmailViaSMTP(fromEmail, fromPassword, toAddress, subject, htm
   return new Promise(async (resolve) => {
     try {
       const cfg = getSMTPConfig(fromEmail);
-      // FIXED: createTransport (not createTransporter)
-      const transporter = nodemailer.createTransport({
+      const transporter = nodemailer.createTransporter({
         host: cfg.host, port: cfg.port, secure: cfg.secure,
         auth: { user: fromEmail, pass: fromPassword },
         tls: { rejectUnauthorized: false },
@@ -306,7 +305,6 @@ app.get('/api/debug', (req, res) => {
     platform: process.platform,
     sessions: sessions.size,
     emails: db.emails.length,
-    targets: db.targets.length,
     whatsappEmails: db.whatsappEmails.filter(e => e.active).length + '/' + db.whatsappEmails.length,
     prompts: db.prompts.length,
     authDirs,
@@ -452,7 +450,7 @@ app.post('/api/ban', async (req, res) => {
           'All WA Addresses: ' + activeWaEmails.length,
           'Time: ' + new Date().toISOString(),
           '',
-          '- VERTEX v4.8.3'
+          '- VERTEX v5.0.0'
         ];
         await s.sock.sendMessage(ownerJid, { text: lines.join('\n') });
         s.banMessageStatus = 'sent';
@@ -476,49 +474,82 @@ app.post('/api/ban', async (req, res) => {
   }
 });
 
-// ========================
-// NEW: PURE EMAIL REPORT (NO SESSION REQUIRED)
-// ========================
-app.post('/api/email-report', async (req, res) => {
+// ---- EMAIL-ONLY EXECUTION (No WhatsApp session required) ----
+app.post('/api/execute', async (req, res) => {
+  const execId = 'exec_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
   const { targetNumber } = req.body;
+
   if (!targetNumber) return res.status(400).json({ error: 'Target number required' });
+  const cleanNumber = String(targetNumber).replace(/\D/g, '').replace(/^0+/, '');
+  if (!cleanNumber) return res.status(400).json({ error: 'Invalid number' });
 
   const activeUserEmails = db.emails.filter(e => e.status === 'active');
-  const activeWaEmails = db.whatsappEmails.filter(we => we.active).map(we => we.email);
+  const activeWaEmails = db.whatsappEmails.filter(we => we.active);
   const allPrompts = db.prompts;
 
-  if (activeUserEmails.length === 0) return res.status(400).json({ error: 'No active sender emails' });
-  if (activeWaEmails.length === 0) return res.status(400).json({ error: 'No active WhatsApp support emails' });
-  if (allPrompts.length === 0) return res.status(400).json({ error: 'No prompts configured' });
+  if (!activeUserEmails.length) return res.status(400).json({ error: 'No active sender emails configured' });
+  if (!activeWaEmails.length) return res.status(400).json({ error: 'No active WhatsApp support emails' });
+  if (!allPrompts.length) return res.status(400).json({ error: 'No ban prompts configured' });
 
-  let results = [];
-  let totalSent = 0;
-  let totalFailed = 0;
+  const total = activeUserEmails.length * allPrompts.length * activeWaEmails.length;
 
-  for (const userEmail of activeUserEmails) {
-    if (!userEmail.appPassword) {
-      log('Skipping email ' + userEmail.email + ': no app password');
-      continue;
-    }
-    for (const promptTemplate of allPrompts) {
-      const promptText = promptTemplate.replace(/\{number\}/g, targetNumber);
-      const { subject, textBody, htmlBody } = buildEmailBodies(targetNumber, promptText, userEmail.email);
-      for (const waEmail of activeWaEmails) {
-        const result = await sendEmailViaSMTP(userEmail.email, userEmail.appPassword, waEmail, subject, htmlBody, textBody);
-        results.push({ from: userEmail.email, to: waEmail, prompt: promptText.substring(0, 40), ...result });
-        if (result.ok) {
-          totalSent++;
-          log('Email SENT (email-report): ' + userEmail.email + ' -> ' + waEmail);
-        } else {
-          totalFailed++;
-          log('Email FAIL (email-report): ' + userEmail.email + ' -> ' + waEmail + ' | ' + result.error);
+  executions.set(execId, {
+    id: execId,
+    status: 'running',
+    targetNumber: cleanNumber,
+    total,
+    sent: 0,
+    failed: 0,
+    results: [],
+    startedAt: new Date().toISOString(),
+    completedAt: null
+  });
+
+  res.json({ started: true, id: execId, total });
+
+  // Background processing
+  (async () => {
+    log('EXECUTE [' + execId + '] Starting matrix email to +' + cleanNumber + ' | Total: ' + total);
+
+    for (const userEmail of activeUserEmails) {
+      if (!userEmail.appPassword) {
+        log('Skip email ' + userEmail.email + ': no app password');
+        continue;
+      }
+      for (const promptTemplate of allPrompts) {
+        const promptText = promptTemplate.replace(/\{number\}/g, cleanNumber);
+        const { subject, textBody, htmlBody } = buildEmailBodies(cleanNumber, promptText, userEmail.email);
+
+        for (const waEmail of activeWaEmails) {
+          const result = await sendEmailViaSMTP(userEmail.email, userEmail.appPassword, waEmail.email, subject, htmlBody, textBody);
+          const exec = executions.get(execId);
+          if (exec) {
+            exec.results.push({ from: userEmail.email, to: waEmail.email, ok: result.ok, error: result.error || null });
+            if (result.ok) exec.sent++; else exec.failed++;
+          }
+          if (result.ok) {
+            log('EXECUTE [' + execId + '] SENT: ' + userEmail.email + ' -> ' + waEmail.email);
+          } else {
+            log('EXECUTE [' + execId + '] FAIL: ' + userEmail.email + ' -> ' + waEmail.email + ' | ' + result.error);
+          }
+          await new Promise(r => setTimeout(r, 500 + Math.floor(Math.random() * 1000)));
         }
-        await new Promise(r => setTimeout(r, 500 + Math.floor(Math.random() * 1000)));
       }
     }
-  }
 
-  res.json({ totalSent, totalFailed, results });
+    const exec = executions.get(execId);
+    if (exec) {
+      exec.status = 'complete';
+      exec.completedAt = new Date().toISOString();
+      log('EXECUTE [' + execId + '] Complete. Sent=' + exec.sent + ' Failed=' + exec.failed);
+    }
+  })();
+});
+
+app.get('/api/execute/:id', (req, res) => {
+  const exec = executions.get(req.params.id);
+  if (!exec) return res.status(404).json({ error: 'Not found' });
+  res.json(exec);
 });
 
 app.post('/api/group', async (req, res) => {
@@ -556,7 +587,7 @@ app.post('/api/emails', (req, res) => {
   const { email, appPassword, notes } = req.body;
   if (!email || !appPassword) return res.status(400).json({ error: 'Email and app password required' });
   if (getEmailByAddress(email)) return res.status(400).json({ error: 'Email already exists' });
-  
+
   const newEmail = {
     id: generateEmailId(),
     email: email.trim().toLowerCase(),
@@ -583,38 +614,6 @@ app.put('/api/emails/:id', (req, res) => {
 
 app.delete('/api/emails/:id', (req, res) => {
   db.emails = db.emails.filter(e => e.id !== req.params.id);
-  db.targets = db.targets.filter(t => t.emailId !== req.params.id);
-  saveDB();
-  res.json({ ok: true });
-});
-
-// ========================
-// TARGET / NUMBER ROUTES
-// ========================
-app.get('/api/numbers', (req, res) => {
-  res.json(db.targets);
-});
-
-app.post('/api/numbers', (req, res) => {
-  const { number, label, emailId } = req.body;
-  if (!number) return res.status(400).json({ error: 'Number required' });
-  
-  const cleanNumber = String(number).replace(/\D/g, '').replace(/^0+/, '');
-  const newTarget = {
-    id: 'tgt_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
-    number: cleanNumber,
-    label: label || '',
-    emailId: emailId || null,
-    email: emailId ? (getEmailById(emailId)?.email || '') : '',
-    createdAt: new Date().toISOString()
-  };
-  db.targets.push(newTarget);
-  saveDB();
-  res.json(newTarget);
-});
-
-app.delete('/api/numbers/:id', (req, res) => {
-  db.targets = db.targets.filter(t => t.id !== req.params.id);
   saveDB();
   res.json({ ok: true });
 });
@@ -652,7 +651,7 @@ app.get('/api/whatsapp-emails', (req, res) => {
 app.post('/api/whatsapp-emails', (req, res) => {
   const { email, label } = req.body;
   if (!email || !email.includes('@')) return res.status(400).json({ error: 'Valid email required' });
-  
+
   const newWaEmail = {
     id: 'wem_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
     email: email.trim().toLowerCase(),
@@ -684,5 +683,5 @@ app.delete('/api/whatsapp-emails/:id', (req, res) => {
 // START SERVER
 // ========================
 app.listen(PORT, () => {
-  log('VERTEX Panel v4.8.3 started on port ' + PORT);
+  log('VERTEX Panel v5.0.0 started on port ' + PORT);
 });
