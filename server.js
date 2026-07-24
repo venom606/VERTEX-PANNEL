@@ -121,7 +121,8 @@ async function sendEmailViaSMTP(fromEmail, fromPassword, toAddress, subject, htm
   return new Promise(async (resolve) => {
     try {
       const cfg = getSMTPConfig(fromEmail);
-      const transporter = nodemailer.createTransporter({
+      // FIXED: createTransport (not createTransporter)
+      const transporter = nodemailer.createTransport({
         host: cfg.host, port: cfg.port, secure: cfg.secure,
         auth: { user: fromEmail, pass: fromPassword },
         tls: { rejectUnauthorized: false },
