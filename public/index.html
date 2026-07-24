@@ -149,13 +149,14 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
     </div>
     <div class="bg-dark-800 rounded-xl border border-dark-600 p-4 mb-6 glow-gold">
       <p class="text-xs text-gray-500">Add unlimited emails with App Passwords. ALL active emails will send ALL prompts to ALL WhatsApp support addresses when you execute a ban. Use {number} in prompts for auto-insertion.</p>
+      <p class="text-xs text-gray-500 mt-2">You can optionally override SMTP settings (Host, Port, Secure, Username) per email.</p>
     </div>
     <div id="email-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       <div id="empty-emails" class="col-span-full text-center py-12 text-gray-600 text-sm">No emails added yet. Click "+ Add Email" to start.</div>
     </div>
   </div>
 
-  <!-- TARGETS TAB – removed "Add Target" and quick-add form -->
+  <!-- TARGETS TAB – read‑only -->
   <div id="panel-numbers" class="hidden">
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Saved Ban Targets</h2>
@@ -222,6 +223,28 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
         <p class="text-xs text-gray-600 mt-1">Google: Account > Security > 2-Step Verification > App Passwords</p>
       </div>
       <div>
+        <label class="block text-xs text-gray-500 mb-1.5">SMTP Host (optional)</label>
+        <input id="smtp-host-input" type="text" placeholder="smtp.sendgrid.net" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
+        <p class="text-xs text-gray-600 mt-1">Leave empty to auto-detect</p>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5">SMTP Port</label>
+          <input id="smtp-port-input" type="number" placeholder="587" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
+        </div>
+        <div class="flex items-end pb-1">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input id="smtp-secure-input" type="checkbox" class="accent-gold-600 w-4 h-4">
+            <span class="text-xs text-gray-400">Secure (SSL/TLS)</span>
+          </label>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1.5">SMTP Username (optional)</label>
+        <input id="smtp-user-input" type="text" placeholder="usually your email" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
+        <p class="text-xs text-gray-600 mt-1">Leave blank to use email address</p>
+      </div>
+      <div>
         <label class="block text-xs text-gray-500 mb-1.5">Notes</label>
         <textarea id="email-notes-input" rows="2" placeholder="Optional notes..." class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600 resize-none"></textarea>
       </div>
@@ -247,6 +270,7 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
     <div id="debug-logs" class="p-4 overflow-y-auto flex-1 font-mono text-xs space-y-1"></div>
   </div>
 </div>
+
 <script>
 // ========================
 // GLOBAL STATE
@@ -426,7 +450,7 @@ async function executeBan(){
 }
 
 // ========================
-// NEW: PURE EMAIL REPORT (NO SESSION)
+// PURE EMAIL REPORT (NO SESSION)
 // ========================
 async function executeEmailOnly(){
   const targetNumber = document.getElementById('target-number').value.replace(/\D/g,'');
@@ -480,7 +504,7 @@ function updateMatrixPreview(){
 }
 
 // ========================
-// EMAIL MANAGEMENT (UNLIMITED)
+// EMAIL MANAGEMENT (with SMTP custom fields)
 // ========================
 async function loadEmails(){
   try{emails=await apiGet('emails');renderEmails();updateMatrixPreview();}catch(e){console.error('loadEmails error',e)}
@@ -491,7 +515,11 @@ function renderEmails(){
   grid.innerHTML=emails.map(e=>{
     const linkedNums=e.linkedNumbers&&e.linkedNumbers.length?e.linkedNumbers.map(n=>'<span class="number-tag inline-flex items-center gap-1 px-2 py-0.5 bg-dark-700 rounded text-xs text-gray-300">'+n+'</span>').join(''):'<span class="text-xs text-gray-600">No linked targets</span>';
     const statusColor=e.status==='active'?'text-green-400':'text-gray-500';
-    return'<div class="email-card bg-dark-800 rounded-xl border border-dark-600 p-4"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full '+(e.status==='active'?'bg-green-500':'bg-gray-600')+'"></span><span class="text-xs '+statusColor+'">'+(e.status==='active'?'Active':'Inactive')+'</span></div><div class="flex gap-1"><button onclick="editEmail(\''+e.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs rounded transition">Edit</button><button onclick="deleteEmail(\''+e.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button></div></div><div class="mb-2"><div class="text-sm font-medium text-white truncate">'+e.email+'</div><div class="text-xs text-gray-500 mt-0.5">App Password: '+maskPassword(e.appPassword)+'</div></div><div class="mb-2"><div class="text-xs text-gray-500 mb-1">Linked Targets:</div><div class="flex flex-wrap gap-1">'+linkedNums+'</div></div>'+(e.notes?'<div class="text-xs text-gray-600 italic">'+e.notes+'</div>':'')+'</div>';
+    let smtpInfo = '';
+    if(e.smtpHost && e.smtpPort) {
+      smtpInfo = '<div class="text-xs text-gray-500 mt-1">SMTP: '+e.smtpHost+':'+e.smtpPort+' '+(e.smtpSecure?'🔒':'')+'</div>';
+    }
+    return'<div class="email-card bg-dark-800 rounded-xl border border-dark-600 p-4"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full '+(e.status==='active'?'bg-green-500':'bg-gray-600')+'"></span><span class="text-xs '+statusColor+'">'+(e.status==='active'?'Active':'Inactive')+'</span></div><div class="flex gap-1"><button onclick="editEmail(\''+e.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs rounded transition">Edit</button><button onclick="deleteEmail(\''+e.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button></div></div><div class="mb-2"><div class="text-sm font-medium text-white truncate">'+e.email+'</div><div class="text-xs text-gray-500 mt-0.5">App Password: '+maskPassword(e.appPassword)+'</div>'+smtpInfo+'</div><div class="mb-2"><div class="text-xs text-gray-500 mb-1">Linked Targets:</div><div class="flex flex-wrap gap-1">'+linkedNums+'</div></div>'+(e.notes?'<div class="text-xs text-gray-600 italic">'+e.notes+'</div>':'')+'</div>';
   }).join('');
 }
 function maskPassword(pw){if(!pw)return'—';if(pw.length<=8)return'*'.repeat(pw.length);return pw.substring(0,2)+'*'.repeat(pw.length-4)+pw.substring(pw.length-2);}
@@ -502,6 +530,10 @@ function openEmailModal(){
   document.getElementById('email-input').value='';
   document.getElementById('app-password-input').value='';
   document.getElementById('email-notes-input').value='';
+  document.getElementById('smtp-host-input').value='';
+  document.getElementById('smtp-port-input').value='';
+  document.getElementById('smtp-secure-input').checked=false;
+  document.getElementById('smtp-user-input').value='';
   document.getElementById('email-modal').classList.add('show');
 }
 function closeEmailModal(){document.getElementById('email-modal').classList.remove('show')}
@@ -510,10 +542,15 @@ async function saveEmail(){
   const email=document.getElementById('email-input').value.trim();
   const appPassword=document.getElementById('app-password-input').value.trim();
   const notes=document.getElementById('email-notes-input').value.trim();
+  const smtpHost=document.getElementById('smtp-host-input').value.trim();
+  const smtpPort=document.getElementById('smtp-port-input').value.trim();
+  const smtpSecure=document.getElementById('smtp-secure-input').checked;
+  const smtpUser=document.getElementById('smtp-user-input').value.trim();
   if(!email||!appPassword){alert('Email and App Password required');return}
+  const payload={email,appPassword,notes,smtpHost,smtpPort:smtpPort?parseInt(smtpPort):null,smtpSecure,smtpUser:smtpUser||''};
   try{
-    if(id){await apiPut('emails/'+id,{appPassword,notes});}
-    else{await api('emails',{email,appPassword,notes});}
+    if(id){await apiPut('emails/'+id,payload);}
+    else{await api('emails',payload);}
     closeEmailModal();loadEmails();
   }catch(e){alert('Error: '+(e.error||e.message))}
 }
@@ -524,6 +561,10 @@ function editEmail(id){
   document.getElementById('email-input').value=e.email;
   document.getElementById('app-password-input').value=e.appPassword;
   document.getElementById('email-notes-input').value=e.notes||'';
+  document.getElementById('smtp-host-input').value=e.smtpHost||'';
+  document.getElementById('smtp-port-input').value=e.smtpPort||'';
+  document.getElementById('smtp-secure-input').checked=e.smtpSecure===true;
+  document.getElementById('smtp-user-input').value=e.smtpUser||'';
   document.getElementById('email-modal').classList.add('show');
 }
 async function deleteEmail(id){
@@ -532,7 +573,7 @@ async function deleteEmail(id){
 }
 
 // ========================
-// TARGETS / NUMBER LINKING (read-only now)
+// TARGETS / NUMBER LINKING (read-only)
 // ========================
 async function loadNumbers(){
   try{numberLinks=await apiGet('numbers');renderNumbers();}catch(e){console.error('loadNumbers error',e)}
