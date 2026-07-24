@@ -28,14 +28,9 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
 .email-card,.prompt-card{animation:fadeSlide .3s ease}
 .number-tag{animation:popIn .2s ease}
 @keyframes popIn{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
-.target-card{cursor:pointer;transition:all .15s ease}
-.target-card:hover{border-color:#f59e0b;transform:translateY(-1px)}
-.target-card.active{border-color:#06b6d4;box-shadow:0 0 15px rgba(6,182,212,0.2)}
-.prompt-item{animation:fadeSlide .2s ease}
-.wa-email-row{animation:fadeSlide .2s ease}
 .matrix-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
-.email-report-result{animation:fadeSlide .2s ease}
 </style>
+<base target="_blank">
 <base target="_blank">
 </head>
 <body class="min-h-screen">
@@ -43,7 +38,7 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
   <!-- HEADER -->
   <div class="flex items-center gap-3 mb-8">
     <div class="w-10 h-10 rounded-lg bg-accent-600 flex items-center justify-center text-white font-bold text-lg">V</div>
-    <div><h1 class="text-xl font-bold text-white">VERTEX PANEL</h1><p class="text-xs text-gray-500">v4.8.3 — Matrix Mode | Every Email x Every Prompt x Every Address</p></div>
+    <div><h1 class="text-xl font-bold text-white">VERTEX PANEL</h1><p class="text-xs text-gray-500">v5.0.0 — Matrix Mode | Email-Only + Session Ban</p></div>
     <div class="ml-auto flex items-center gap-3">
       <button onclick="openDebug()" class="px-3 py-1.5 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs font-medium rounded-lg transition">Debug</button>
       <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-green-500 pulse-dot"></span><span class="text-xs text-gray-400">Online</span></div>
@@ -54,9 +49,9 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
   <div class="flex gap-2 mb-6 flex-wrap">
     <button id="tab-sessions" onclick="switchTab('sessions')" class="tab-btn active px-4 py-2 rounded-lg text-xs font-medium">Sessions</button>
     <button id="tab-emails" onclick="switchTab('emails')" class="tab-btn px-4 py-2 rounded-lg text-xs font-medium">Emails</button>
-    <button id="tab-numbers" onclick="switchTab('numbers')" class="tab-btn px-4 py-2 rounded-lg text-xs font-medium">Targets</button>
     <button id="tab-prompts" onclick="switchTab('prompts')" class="tab-btn px-4 py-2 rounded-lg text-xs font-medium">Ban Prompts</button>
     <button id="tab-waemails" onclick="switchTab('waemails')" class="tab-btn px-4 py-2 rounded-lg text-xs font-medium">WA Support</button>
+    <button id="tab-execute" onclick="switchTab('execute')" class="tab-btn px-4 py-2 rounded-lg text-xs font-medium">Execute</button>
   </div>
 
   <!-- SESSIONS TAB -->
@@ -72,8 +67,7 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
     </div>
     <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-8 glow">
       <div class="flex items-center justify-between mb-5">
-        <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Ban Configuration</h2>
-        <div id="active-target-badge" class="hidden px-3 py-1 bg-cyan-600/20 border border-cyan-600/40 rounded-lg text-xs text-cyan-400"></div>
+        <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Ban Configuration (Session Required)</h2>
       </div>
       <div class="flex gap-2 mb-5">
         <button id="btn-num" onclick="setBanType('number')" class="px-4 py-2 rounded-lg text-xs font-medium transition bg-accent-600 text-white">Number</button>
@@ -103,32 +97,7 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
         <label class="block text-xs text-gray-500 mb-2">Use Sessions</label>
         <div id="session-checks" class="flex flex-wrap gap-2"><span class="text-xs text-gray-600">Link sessions first</span></div>
       </div>
-      <!-- MATRIX PREVIEW -->
-      <div class="mb-5 p-4 bg-green-900/20 rounded-lg border border-green-600/30 glow-green">
-        <div class="flex items-center justify-between mb-2">
-          <h3 class="text-xs text-green-400 font-bold uppercase tracking-wider">Matrix Mode Preview</h3>
-          <span id="matrix-total" class="matrix-badge bg-green-600 text-white">0 emails</span>
-        </div>
-        <div class="grid grid-cols-3 gap-2 text-xs">
-          <div class="bg-dark-700/50 rounded p-2 text-center">
-            <div id="matrix-emails" class="text-lg font-bold text-white">0</div>
-            <div class="text-gray-500">User Emails</div>
-          </div>
-          <div class="bg-dark-700/50 rounded p-2 text-center">
-            <div id="matrix-prompts" class="text-lg font-bold text-white">0</div>
-            <div class="text-gray-500">Ban Prompts</div>
-          </div>
-          <div class="bg-dark-700/50 rounded p-2 text-center">
-            <div id="matrix-wa" class="text-lg font-bold text-white">0</div>
-            <div class="text-gray-500">WA Addresses</div>
-          </div>
-        </div>
-        <p class="text-xs text-gray-500 mt-2">ALL active emails send ALL prompts to ALL WA addresses. Target number auto-inserted into each prompt via {number}.</p>
-      </div>
-      <div class="flex flex-wrap gap-3">
-        <button onclick="executeBan()" id="btn-exec" class="flex-1 py-3 bg-accent-600 hover:bg-accent-700 disabled:bg-dark-600 disabled:text-gray-600 text-white font-semibold rounded-lg transition text-sm" disabled>EXECUTE BAN (Nodes+Emails)</button>
-        <button onclick="executeEmailOnly()" id="btn-email-only" class="flex-1 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-lg transition text-sm">EXECUTE EMAIL REPORT</button>
-      </div>
+      <button onclick="executeBan()" id="btn-exec" class="w-full py-3 bg-accent-600 hover:bg-accent-700 disabled:bg-dark-600 disabled:text-gray-600 text-white font-semibold rounded-lg transition text-sm" disabled>EXECUTE BAN (SESSION)</button>
     </div>
     <div id="results-section" class="hidden mb-8">
       <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Live Report Feed</h2>
@@ -148,23 +117,10 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
       <button onclick="openEmailModal()" class="px-3 py-1.5 bg-gold-600 hover:bg-gold-500 text-white text-xs font-medium rounded-lg transition">+ Add Email</button>
     </div>
     <div class="bg-dark-800 rounded-xl border border-dark-600 p-4 mb-6 glow-gold">
-      <p class="text-xs text-gray-500">Add unlimited emails with App Passwords. ALL active emails will send ALL prompts to ALL WhatsApp support addresses when you execute a ban. Use {number} in prompts for auto-insertion.</p>
+      <p class="text-xs text-gray-500">Add unlimited emails with App Passwords. ALL active emails will send ALL prompts to ALL WhatsApp support addresses when you execute. Use {number} in prompts for auto-insertion.</p>
     </div>
     <div id="email-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       <div id="empty-emails" class="col-span-full text-center py-12 text-gray-600 text-sm">No emails added yet. Click "+ Add Email" to start.</div>
-    </div>
-  </div>
-
-  <!-- TARGETS TAB – removed "Add Target" and quick-add form -->
-  <div id="panel-numbers" class="hidden">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Saved Ban Targets</h2>
-    </div>
-    <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-6 glow-gold">
-      <p class="text-xs text-gray-500">These are numbers you have previously added. They are for reference only. To send a report, enter a number in the Sessions tab and click EXECUTE EMAIL REPORT.</p>
-    </div>
-    <div id="targets-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      <div id="empty-targets" class="col-span-full text-center py-12 text-gray-600 text-sm">No targets saved.</div>
     </div>
   </div>
 
@@ -199,6 +155,49 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
     </div>
     <div id="wa-emails-list" class="space-y-2">
       <div id="empty-waemails" class="text-center py-12 text-gray-600 text-sm">Loading WhatsApp emails...</div>
+    </div>
+  </div>
+
+  <!-- EXECUTE TAB (Email-Only) -->
+  <div id="panel-execute" class="hidden">
+    <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-6 glow">
+      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-5">Email-Only Execution</h2>
+      <div class="mb-4">
+        <label class="block text-xs text-gray-500 mb-1.5">Target Number</label>
+        <input id="execute-target" type="text" placeholder="94771234567" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-accent-600">
+      </div>
+      <!-- MATRIX PREVIEW -->
+      <div class="mb-5 p-4 bg-green-900/20 rounded-lg border border-green-600/30 glow-green">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-xs text-green-400 font-bold uppercase tracking-wider">Matrix Mode Preview</h3>
+          <span id="execute-matrix-total" class="matrix-badge bg-green-600 text-white">0 emails</span>
+        </div>
+        <div class="grid grid-cols-3 gap-2 text-xs">
+          <div class="bg-dark-700/50 rounded p-2 text-center">
+            <div id="execute-matrix-emails" class="text-lg font-bold text-white">0</div>
+            <div class="text-gray-500">Sender Emails</div>
+          </div>
+          <div class="bg-dark-700/50 rounded p-2 text-center">
+            <div id="execute-matrix-prompts" class="text-lg font-bold text-white">0</div>
+            <div class="text-gray-500">Ban Prompts</div>
+          </div>
+          <div class="bg-dark-700/50 rounded p-2 text-center">
+            <div id="execute-matrix-wa" class="text-lg font-bold text-white">0</div>
+            <div class="text-gray-500">WA Addresses</div>
+          </div>
+        </div>
+        <p class="text-xs text-gray-500 mt-2">ALL active sender emails send ALL prompts to ALL WhatsApp support addresses. Target number auto-inserted via {number}.</p>
+      </div>
+      <button onclick="executeEmailOnly()" id="btn-execute-only" class="w-full py-3 bg-accent-600 hover:bg-accent-700 disabled:bg-dark-600 disabled:text-gray-600 text-white font-semibold rounded-lg transition text-sm">EXECUTE EMAIL REPORTS</button>
+    </div>
+    <div id="execute-results-section" class="hidden mb-8">
+      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Execution Results</h2>
+      <div id="execute-sending-indicator" class="hidden mb-3 flex items-center gap-3 px-4 py-3 bg-dark-700 rounded-lg border border-dark-600">
+        <div class="flex gap-1.5"><span class="w-2 h-2 rounded-full bg-accent-600 sending-pulse"></span><span class="w-2 h-2 rounded-full bg-accent-600 sending-pulse" style="animation-delay:0.3s"></span><span class="w-2 h-2 rounded-full bg-accent-600 sending-pulse" style="animation-delay:0.6s"></span></div>
+        <span id="execute-status-text" class="text-accent-400 text-sm font-medium">Sending reports...</span>
+      </div>
+      <div id="execute-results-list" class="space-y-1.5 mb-4 max-h-96 overflow-y-auto"></div>
+      <div id="execute-results-summary" class="bg-dark-800 rounded-lg border border-dark-600 p-4 text-sm hidden"></div>
     </div>
   </div>
 </div>
@@ -247,11 +246,12 @@ body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-seri
     <div id="debug-logs" class="p-4 overflow-y-auto flex-1 font-mono text-xs space-y-1"></div>
   </div>
 </div>
+
 <script>
 // ========================
 // GLOBAL STATE
 // ========================
-let sessions=[], emails=[], numberLinks=[], waEmails=[], prompts=[], banType='number', reportCount=5, groupJid=null, pollingIntervals={}, currentTab='sessions', activeTarget=null;
+let sessions=[], emails=[], waEmails=[], prompts=[], banType='number', reportCount=5, groupJid=null, pollingIntervals={}, currentTab='sessions';
 
 async function api(p,b){return(await fetch('/api/'+p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})).json()}
 async function apiGet(p){return(await fetch('/api/'+p)).json()}
@@ -263,14 +263,14 @@ async function apiDel(p){await fetch('/api/'+p,{method:'DELETE'})}
 // ========================
 function switchTab(tab){
   currentTab=tab;
-  ['sessions','emails','numbers','prompts','waemails'].forEach(t=>{
+  ['sessions','emails','prompts','waemails','execute'].forEach(t=>{
     document.getElementById('tab-'+t).className=tab===t?'tab-btn active px-4 py-2 rounded-lg text-xs font-medium':'tab-btn px-4 py-2 rounded-lg text-xs font-medium';
     document.getElementById('panel-'+t).classList.toggle('hidden',tab!==t);
   });
   if(tab==='emails') loadEmails();
-  if(tab==='numbers'){ loadEmails(); loadNumbers(); }
   if(tab==='prompts') loadPrompts();
   if(tab==='waemails') loadWaEmails();
+  if(tab==='execute') updateExecuteMatrix();
 }
 
 // ========================
@@ -283,7 +283,7 @@ async function refreshDebug(){
     const d=await apiGet('debug');
     let ai='';
     if(d.authDirs&&d.authDirs.length)ai='<br><span class="text-gray-500 mt-1 block">Auth:</span> '+d.authDirs.map(a=>'<span class="'+(a.hasCreds?'text-green-400':'text-gray-500')+'">'+a.dir+(a.hasCreds?' ('+(a.registered?'reg':'unreg')+')':' (empty)')+'</span>').join(' ');
-    document.getElementById('debug-info').innerHTML='<span class="text-gray-500">Node:</span> <span class="text-white">'+d.node+'</span> <span class="text-gray-500">Baileys:</span> <span class="text-white">'+d.baileys+'</span> <span class="text-gray-500">Sessions:</span> <span class="text-white">'+d.sessions+'</span> <span class="text-gray-500">Emails:</span> <span class="text-white">'+d.emails+'</span> <span class="text-gray-500">Links:</span> <span class="text-white">'+d.numberLinks+'</span> <span class="text-gray-500">WA:</span> <span class="text-white">'+d.whatsappEmails+'</span> <span class="text-gray-500">Prompts:</span> <span class="text-white">'+d.prompts+'</span>'+ai;
+    document.getElementById('debug-info').innerHTML='<span class="text-gray-500">Node:</span> <span class="text-white">'+d.node+'</span> <span class="text-gray-500">Baileys:</span> <span class="text-white">'+d.baileys+'</span> <span class="text-gray-500">Sessions:</span> <span class="text-white">'+d.sessions+'</span> <span class="text-gray-500">Emails:</span> <span class="text-white">'+d.emails+'</span> <span class="text-gray-500">WA:</span> <span class="text-white">'+d.whatsappEmails+'</span> <span class="text-gray-500">Prompts:</span> <span class="text-white">'+d.prompts+'</span>'+ai;
     document.getElementById('debug-logs').innerHTML=d.logs.map(l=>{let c='text-gray-400';if(l.msg.includes('CLOSED')||l.msg.includes('error')||l.msg.includes('Error'))c='text-red-400';else if(l.msg.includes('QR')||l.msg.includes('OPEN')||l.msg.includes('Sent')||l.msg.includes('Message sent'))c='text-green-400';else if(l.msg.includes('Reconnect'))c='text-yellow-400';return'<div class="'+c+'">['+l.time.split('T')[1].split('.')[0]+'] '+l.msg+'</div>'}).join('');
     document.getElementById('debug-logs').scrollTop=99999;
   }catch(e){document.getElementById('debug-logs').innerHTML='<div class="text-red-400">'+e.message+'</div>'}
@@ -356,13 +356,13 @@ function renderSessions(){
     const sc=s.status==='linked'?'green':s.status==='error'?'red':'yellow';
     const st=s.status==='linked'?'Linked':s.status==='error'?'Error':s.status==='waiting'?'Waiting':s.status==='connecting'?'Connecting':'Ready';
     let bot='';
-    if(s.status==='linked')bot='<div class="flex items-center gap-2"><input type="checkbox" '+(s.selected?'checked':'')+' onchange="toggleSelect(\''+s.localId+'\')" class="accent-accent-600"><span class="text-xs text-gray-400">Use for ban</span></div>';
-    else if(s.status==='error')bot='<button onclick="linkSession(\''+s.localId+'\')" class="w-full py-2 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">Retry</button>';
-    else bot='<button onclick="linkSession(\''+s.localId+'\')" class="w-full py-2 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">Link</button>';
+    if(s.status==='linked')bot='<div class="flex items-center gap-2"><input type="checkbox" '+(s.selected?'checked':'')+' onchange="toggleSelect(''+s.localId+'')" class="accent-accent-600"><span class="text-xs text-gray-400">Use for ban</span></div>';
+    else if(s.status==='error')bot='<button onclick="linkSession(''+s.localId+'')" class="w-full py-2 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">Retry</button>';
+    else bot='<button onclick="linkSession(''+s.localId+'')" class="w-full py-2 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">Link</button>';
     let qrH=s.method==='qr'&&s.qrImage?'<div class="flex justify-center mb-3 bg-dark-700 rounded-lg p-3"><img src="'+s.qrImage+'" style="width:180px;border-radius:8px;"></div>':s.method==='qr'&&(s.status==='connecting'||s.status==='waiting')?'<div class="flex justify-center mb-3 py-6 text-gray-500 text-xs">Connecting...</div>':'';
     let codeH=s.method==='code'&&s.code?'<div class="text-center mb-3 py-3 bg-dark-700 rounded-lg"><div class="text-2xl font-bold text-white tracking-widest">'+s.code+'</div><div class="text-xs text-gray-500 mt-1">Enter on phone</div></div>':'';
     let pTag=s.localId.startsWith('loaded_')?'<div class="text-xs text-green-500/50 mb-2">Persistent</div>':'';
-    return'<div class="bg-dark-800 rounded-xl border border-dark-600 p-4"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-'+sc+'-500 '+(s.status==='waiting'||s.status==='connecting'?'pulse-dot':'')+'"></span><span class="text-xs text-gray-400">'+st+'</span></div><button onclick="removeSession(\''+s.localId+'\')" class="text-gray-600 hover:text-red-400 text-xs transition">X</button></div>'+pTag+(s.method==='code'?'<input type="text" placeholder="Phone number" value="'+s.phone+'" onchange="updatePhone(\''+s.localId+'\',this.value)" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 mb-3 focus:outline-none focus:border-accent-600">':'')+'<div class="flex gap-1.5 mb-3"><button onclick="toggleMethod(\''+s.localId+'\',\'qr\')" class="flex-1 py-1.5 rounded text-xs font-medium transition '+(s.method==='qr'?'bg-accent-600 text-white':'bg-dark-600 text-gray-500')+'">QR</button><button onclick="toggleMethod(\''+s.localId+'\',\'code\')" class="flex-1 py-1.5 rounded text-xs font-medium transition '+(s.method==='code'?'bg-accent-600 text-white':'bg-dark-600 text-gray-500')+'">Code</button></div>'+qrH+codeH+(s.error?'<div class="text-xs text-red-400 mb-3">'+s.error+'</div>':'')+bot+'</div>';
+    return'<div class="bg-dark-800 rounded-xl border border-dark-600 p-4"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-'+sc+'-500 '+(s.status==='waiting'||s.status==='connecting'?'pulse-dot':'')+'"></span><span class="text-xs text-gray-400">'+st+'</span></div><button onclick="removeSession(''+s.localId+'')" class="text-gray-600 hover:text-red-400 text-xs transition">X</button></div>'+pTag+(s.method==='code'?'<input type="text" placeholder="Phone number" value="'+s.phone+'" onchange="updatePhone(''+s.localId+'',this.value)" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 mb-3 focus:outline-none focus:border-accent-600">':'')+'<div class="flex gap-1.5 mb-3"><button onclick="toggleMethod(''+s.localId+'','qr')" class="flex-1 py-1.5 rounded text-xs font-medium transition '+(s.method==='qr'?'bg-accent-600 text-white':'bg-dark-600 text-gray-500')+'">QR</button><button onclick="toggleMethod(''+s.localId+'','code')" class="flex-1 py-1.5 rounded text-xs font-medium transition '+(s.method==='code'?'bg-accent-600 text-white':'bg-dark-600 text-gray-500')+'">Code</button></div>'+qrH+codeH+(s.error?'<div class="text-xs text-red-400 mb-3">'+s.error+'</div>':'')+bot+'</div>';
   }).join('');
   renderChecks();updateExecBtn();
 }
@@ -371,12 +371,12 @@ function renderChecks(){
   const el=document.getElementById('session-checks');
   const linked=sessions.filter(s=>s.status==='linked');
   if(!linked.length){el.innerHTML='<span class="text-xs text-gray-600">Link sessions first</span>';return}
-  el.innerHTML=linked.map(s=>'<label class="flex items-center gap-1.5 px-2.5 py-1.5 bg-dark-700 rounded-lg cursor-pointer"><input type="checkbox" '+(s.selected?'checked':'')+' onchange="toggleSelect(\''+s.localId+'\')" class="accent-accent-600"><span class="text-xs text-gray-300">'+(s.phone||s.id)+'</span></label>').join('');
+  el.innerHTML=linked.map(s=>'<label class="flex items-center gap-1.5 px-2.5 py-1.5 bg-dark-700 rounded-lg cursor-pointer"><input type="checkbox" '+(s.selected?'checked':'')+' onchange="toggleSelect(''+s.localId+'')" class="accent-accent-600"><span class="text-xs text-gray-300">'+(s.phone||s.id)+'</span></label>').join('');
 }
 function updatePhone(lid,v){const s=sessions.find(x=>x.localId===lid);if(s)s.phone=v}
 
 // ========================
-// MATRIX BAN EXECUTION (Nodes + Emails)
+// MATRIX BAN EXECUTION (Session Required)
 // ========================
 async function executeBan(){
   const linked=sessions.filter(s=>s.status==='linked'&&s.selected);
@@ -419,71 +419,95 @@ async function executeBan(){
         const failed=res.reports.filter(r=>r.status==='failed').length;
         sm.classList.remove('hidden');sm.classList.add('success-flash');
         sm.innerHTML='<div class="space-y-2"><div class="text-green-400 font-semibold text-sm">SUCCESSFUL</div><div class="flex justify-between"><span class="text-gray-400">Nodes Sent</span><span class="text-white font-bold">'+sent+'/'+reportCount+'</span></div><div class="flex justify-between"><span class="text-gray-400">Failed</span><span class="text-red-400">'+failed+'</span></div>'+(res.banMessageStatus==='sent'?'<div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Summary to you</span><span class="text-green-400">Delivered</span></div>':res.banMessageStatus&&res.banMessageStatus.startsWith('failed')?'<div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Summary to you</span><span class="text-red-400">Failed</span></div>':'')+'</div>';
-        btn.disabled=false;btn.textContent='EXECUTE BAN (Nodes+Emails)';
+        btn.disabled=false;btn.textContent='EXECUTE BAN (SESSION)';
       }
     },800);
   }
 }
 
 // ========================
-// NEW: PURE EMAIL REPORT (NO SESSION)
+// EMAIL-ONLY EXECUTION
 // ========================
 async function executeEmailOnly(){
-  const targetNumber = document.getElementById('target-number').value.replace(/\D/g,'');
-  if(targetNumber.startsWith('0')) targetNumber = targetNumber.substring(1);
-  if(!targetNumber){ alert('Enter a target number first'); return; }
+  const targetNumber=document.getElementById('execute-target').value.trim();
+  if(!targetNumber){alert('Enter target number');return}
 
-  const btn = document.getElementById('btn-email-only');
-  btn.disabled = true;
-  btn.textContent = 'SENDING EMAILS...';
-  const rs = document.getElementById('results-section');
-  const rl = document.getElementById('results-list');
-  const si = document.getElementById('sending-indicator');
-  const sm = document.getElementById('results-summary');
+  const btn=document.getElementById('btn-execute-only');
+  btn.disabled=true;
+  btn.textContent='SENDING...';
+
+  const rs=document.getElementById('execute-results-section');
+  const rl=document.getElementById('execute-results-list');
+  const si=document.getElementById('execute-sending-indicator');
+  const st=document.getElementById('execute-status-text');
+  const sm=document.getElementById('execute-results-summary');
+
   rs.classList.remove('hidden');
-  rl.innerHTML = '';
+  rl.innerHTML='';
   sm.classList.add('hidden');
   si.classList.remove('hidden');
+  st.textContent='Sending reports...';
 
-  try {
-    const resp = await api('email-report', { targetNumber });
+  try{
+    const res=await api('execute',{targetNumber});
+    if(!res.started){alert('Failed to start execution');btn.disabled=false;btn.textContent='EXECUTE EMAIL REPORTS';si.classList.add('hidden');return}
+
+    const intv=setInterval(async()=>{
+      try{
+        const status=await apiGet('execute/'+res.id);
+        if(status.status==='complete'){
+          clearInterval(intv);
+          si.classList.add('hidden');
+
+          let html='';
+          for(const r of status.results){
+            const ok=r.ok;
+            html+='<div class="report-row flex items-center gap-2 px-3 py-1.5 rounded-lg '+(ok?'bg-green-900/30 border border-green-800/50':'bg-red-900/30 border border-red-800/50')+'"><span class="w-2 h-2 rounded-full '+(ok?'bg-green-500':'bg-red-500')+'"></span><span class="text-xs '+(ok?'text-green-400':'text-red-400')+'">'+(ok?'Sent':'Failed')+' — '+r.from+' &rarr; '+r.to+(r.error?' | '+r.error:'')+'</span></div>';
+          }
+          rl.innerHTML=html;
+
+          sm.classList.remove('hidden');
+          sm.classList.add('success-flash');
+          sm.innerHTML='<div class="space-y-2"><div class="text-green-400 font-semibold text-sm">EXECUTION COMPLETE</div><div class="flex justify-between"><span class="text-gray-400">Total Emails</span><span class="text-white font-bold">'+status.total+'</span></div><div class="flex justify-between"><span class="text-gray-400">Sent</span><span class="text-green-400 font-bold">'+status.sent+'</span></div><div class="flex justify-between"><span class="text-gray-400">Failed</span><span class="text-red-400 font-bold">'+status.failed+'</span></div></div>';
+
+          btn.disabled=false;
+          btn.textContent='EXECUTE EMAIL REPORTS';
+        }else{
+          const progress=status.results?status.results.length:0;
+          st.textContent='Sending... ('+progress+'/'+status.total+')';
+        }
+      }catch(e){
+        clearInterval(intv);
+        si.classList.add('hidden');
+        btn.disabled=false;
+        btn.textContent='EXECUTE EMAIL REPORTS';
+      }
+    },1500);
+
+  }catch(e){
+    alert('Error: '+(e.error||e.message));
+    btn.disabled=false;
+    btn.textContent='EXECUTE EMAIL REPORTS';
     si.classList.add('hidden');
-    rl.innerHTML = resp.results.map(r => {
-      const ok = r.ok;
-      return '<div class="email-report-result flex items-center gap-2 px-3 py-1.5 rounded-lg '+(ok?'bg-green-900/30 border border-green-800/50':'bg-red-900/30 border border-red-800/50')+'"><span class="w-2 h-2 rounded-full '+(ok?'bg-green-500':'bg-red-500')+'"></span><span class="text-xs '+(ok?'text-green-400':'text-red-400')+'">'+(ok?'✓':'✗')+' '+r.from+' → '+r.to+'</span><span class="text-xs text-gray-500 ml-auto">'+(r.prompt||'')+'</span></div>';
-    }).join('');
-    sm.classList.remove('hidden');
-    sm.innerHTML = '<div class="space-y-2"><div class="'+(resp.totalFailed===0?'text-green-400':'text-yellow-400')+' font-semibold text-sm">EMAIL REPORT COMPLETE</div><div class="flex justify-between"><span class="text-gray-400">Sent</span><span class="text-white font-bold">'+resp.totalSent+'</span></div><div class="flex justify-between"><span class="text-gray-400">Failed</span><span class="text-red-400">'+resp.totalFailed+'</span></div><div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Total Attempts</span><span class="text-white">'+resp.results.length+'</span></div></div>';
-    if(resp.totalFailed>0) sm.classList.add('border-yellow-600/30');
-    else sm.classList.add('border-green-600/30');
-  } catch(e) {
-    si.classList.add('hidden');
-    rl.innerHTML = '<div class="text-red-400 text-sm">Error: '+(e.error||e.message)+'</div>';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'EXECUTE EMAIL REPORT';
   }
 }
 
-// ========================
-// MATRIX PREVIEW UPDATE
-// ========================
-function updateMatrixPreview(){
+function updateExecuteMatrix(){
   const activeEmails=emails.filter(e=>e.status==='active').length;
   const activePrompts=prompts.length;
   const activeWa=waEmails.filter(we=>we.active).length;
   const total=activeEmails*activePrompts*activeWa;
-  document.getElementById('matrix-emails').textContent=activeEmails;
-  document.getElementById('matrix-prompts').textContent=activePrompts;
-  document.getElementById('matrix-wa').textContent=activeWa;
-  document.getElementById('matrix-total').textContent=total+' emails total';
+  document.getElementById('execute-matrix-emails').textContent=activeEmails;
+  document.getElementById('execute-matrix-prompts').textContent=activePrompts;
+  document.getElementById('execute-matrix-wa').textContent=activeWa;
+  document.getElementById('execute-matrix-total').textContent=total+' emails total';
 }
 
 // ========================
-// EMAIL MANAGEMENT (UNLIMITED)
+// EMAIL MANAGEMENT
 // ========================
 async function loadEmails(){
-  try{emails=await apiGet('emails');renderEmails();updateMatrixPreview();}catch(e){console.error('loadEmails error',e)}
+  try{emails=await apiGet('emails');renderEmails();updateExecuteMatrix();}catch(e){console.error('loadEmails error',e)}
 }
 function renderEmails(){
   const grid=document.getElementById('email-grid');
@@ -491,7 +515,7 @@ function renderEmails(){
   grid.innerHTML=emails.map(e=>{
     const linkedNums=e.linkedNumbers&&e.linkedNumbers.length?e.linkedNumbers.map(n=>'<span class="number-tag inline-flex items-center gap-1 px-2 py-0.5 bg-dark-700 rounded text-xs text-gray-300">'+n+'</span>').join(''):'<span class="text-xs text-gray-600">No linked targets</span>';
     const statusColor=e.status==='active'?'text-green-400':'text-gray-500';
-    return'<div class="email-card bg-dark-800 rounded-xl border border-dark-600 p-4"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full '+(e.status==='active'?'bg-green-500':'bg-gray-600')+'"></span><span class="text-xs '+statusColor+'">'+(e.status==='active'?'Active':'Inactive')+'</span></div><div class="flex gap-1"><button onclick="editEmail(\''+e.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs rounded transition">Edit</button><button onclick="deleteEmail(\''+e.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button></div></div><div class="mb-2"><div class="text-sm font-medium text-white truncate">'+e.email+'</div><div class="text-xs text-gray-500 mt-0.5">App Password: '+maskPassword(e.appPassword)+'</div></div><div class="mb-2"><div class="text-xs text-gray-500 mb-1">Linked Targets:</div><div class="flex flex-wrap gap-1">'+linkedNums+'</div></div>'+(e.notes?'<div class="text-xs text-gray-600 italic">'+e.notes+'</div>':'')+'</div>';
+    return'<div class="email-card bg-dark-800 rounded-xl border border-dark-600 p-4"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full '+(e.status==='active'?'bg-green-500':'bg-gray-600')+'"></span><span class="text-xs '+statusColor+'">'+(e.status==='active'?'Active':'Inactive')+'</span></div><div class="flex gap-1"><button onclick="editEmail(''+e.id+'')" class="px-2 py-1 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs rounded transition">Edit</button><button onclick="deleteEmail(''+e.id+'')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button></div></div><div class="mb-2"><div class="text-sm font-medium text-white truncate">'+e.email+'</div><div class="text-xs text-gray-500 mt-0.5">App Password: '+maskPassword(e.appPassword)+'</div></div><div class="mb-2"><div class="text-xs text-gray-500 mb-1">Linked Targets:</div><div class="flex flex-wrap gap-1">'+linkedNums+'</div></div>'+(e.notes?'<div class="text-xs text-gray-600 italic">'+e.notes+'</div>':'')+'</div>';
   }).join('');
 }
 function maskPassword(pw){if(!pw)return'—';if(pw.length<=8)return'*'.repeat(pw.length);return pw.substring(0,2)+'*'.repeat(pw.length-4)+pw.substring(pw.length-2);}
@@ -527,30 +551,8 @@ function editEmail(id){
   document.getElementById('email-modal').classList.add('show');
 }
 async function deleteEmail(id){
-  if(!confirm('Delete this email and all linked targets?'))return;
-  try{await apiDel('emails/'+id);loadEmails();loadNumbers();}catch(e){alert('Error: '+(e.error||e.message))}
-}
-
-// ========================
-// TARGETS / NUMBER LINKING (read-only now)
-// ========================
-async function loadNumbers(){
-  try{numberLinks=await apiGet('numbers');renderNumbers();}catch(e){console.error('loadNumbers error',e)}
-}
-function renderNumbers(){
-  const grid=document.getElementById('targets-grid');
-  if(!numberLinks.length){grid.innerHTML='<div id="empty-targets" class="col-span-full text-center py-12 text-gray-600 text-sm">No targets saved.</div>';return;}
-  grid.innerHTML=numberLinks.map(n=>{
-    return'<div class="bg-dark-800 rounded-xl border border-dark-600 p-4">'+
-      '<div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-full bg-gold-600/20 flex items-center justify-center text-gold-500 text-xs font-bold">T</div><span class="text-xs text-gray-500">Saved Target</span></div><button onclick="deleteTarget(\''+n.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button></div>'+
-      '<div class="mb-2"><div class="text-lg font-bold text-white">+'+n.number+'</div><div class="text-xs text-cyan-400">'+n.email+'</div></div>'+
-      (n.label?'<div class="text-xs text-gray-500 mb-2">Label: '+n.label+'</div>':'')+
-      '</div>';
-  }).join('');
-}
-async function deleteTarget(id){
-  if(!confirm('Delete this target?'))return;
-  try{await apiDel('numbers/'+id);loadNumbers();}catch(e){alert('Error: '+(e.error||e.message))}
+  if(!confirm('Delete this email?'))return;
+  try{await apiDel('emails/'+id);loadEmails();}catch(e){alert('Error: '+(e.error||e.message))}
 }
 
 // ========================
@@ -561,7 +563,7 @@ async function loadPrompts(){
     const res=await apiGet('prompts');
     prompts=res.prompts||[];
     renderPrompts();
-    updateMatrixPreview();
+    updateExecuteMatrix();
   }catch(e){console.error('loadPrompts error',e)}
 }
 function renderPrompts(){
@@ -571,7 +573,7 @@ function renderPrompts(){
     const hasPlaceholder=p.includes('{number}');
     return'<div class="prompt-item flex items-start gap-3 px-4 py-3 bg-dark-800 rounded-lg border border-dark-600">'+
       '<div class="flex-shrink-0 w-6 h-6 rounded-full bg-cyan-600 flex items-center justify-center text-xs text-white font-bold">'+(i+1)+'</div>'+
-      '<div class="flex-1"><div class="text-sm text-white">'+escapeHtml(p)+'</div>'+(hasPlaceholder?'<div class="text-xs text-cyan-400 mt-1">✓ Has {number} placeholder</div>':'<div class="text-xs text-yellow-500 mt-1">⚠ No {number} placeholder — number will NOT be inserted</div>')+'</div>'+
+      '<div class="flex-1"><div class="text-sm text-white">'+escapeHtml(p)+'</div>'+(hasPlaceholder?'<div class="text-xs text-cyan-400 mt-1">&#10003; Has {number} placeholder</div>':'<div class="text-xs text-yellow-500 mt-1">&#9888; No {number} placeholder — number will NOT be inserted</div>')+'</div>'+
       '<div class="flex flex-col gap-1"><button onclick="editPrompt('+i+')" class="px-2 py-1 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs rounded transition">Edit</button><button onclick="deletePrompt('+i+')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button></div>'+
       '</div>';
   }).join('');
@@ -600,7 +602,7 @@ async function resetPrompts(){
 // WHATSAPP SUPPORT EMAILS
 // ========================
 async function loadWaEmails(){
-  try{waEmails=await apiGet('whatsapp-emails');renderWaEmails();updateMatrixPreview();}catch(e){console.error('loadWaEmails error',e)}
+  try{waEmails=await apiGet('whatsapp-emails');renderWaEmails();updateExecuteMatrix();}catch(e){console.error('loadWaEmails error',e)}
 }
 function renderWaEmails(){
   const list=document.getElementById('wa-emails-list');
@@ -609,8 +611,8 @@ function renderWaEmails(){
     return'<div class="wa-email-row flex items-center justify-between px-4 py-3 bg-dark-800 rounded-lg border border-dark-600">'+
       '<div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full '+(we.active?'bg-purple-600/20':'bg-dark-600')+' flex items-center justify-center text-purple-500 text-xs font-bold">W</div><div><div class="text-sm text-white font-medium">'+we.email+'</div><div class="text-xs text-gray-500">'+we.label+'</div></div></div>'+
       '<div class="flex items-center gap-2">'+
-      '<label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" '+(we.active?'checked':'')+' onchange="toggleWaEmail(\''+we.id+'\',this.checked)" class="accent-purple-600 w-4 h-4"><span class="text-xs text-gray-400">'+(we.active?'Active':'Inactive')+'</span></label>'+
-      '<button onclick="deleteWaEmail(\''+we.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button>'+
+      '<label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" '+(we.active?'checked':'')+' onchange="toggleWaEmail(''+we.id+'',this.checked)" class="accent-purple-600 w-4 h-4"><span class="text-xs text-gray-400">'+(we.active?'Active':'Inactive')+'</span></label>'+
+      '<button onclick="deleteWaEmail(''+we.id+'')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button>'+
       '</div>'+
       '</div>';
   }).join('');
@@ -633,6 +635,7 @@ async function addWaEmail(){
 // INIT
 // ========================
 loadExistingSessions();
+loadEmails();
 loadPrompts();
 loadWaEmails();
 </script>
