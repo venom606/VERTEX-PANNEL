@@ -1,728 +1,681 @@
-const express = require('express');
-const path = require('path');
-const fs = require('fs');
-const QRCode = require('qrcode');
-const pino = require('pino');
-const nodemailer = require('nodemailer');
-const {
-  makeWASocket, fetchLatestBaileysVersion, DisconnectReason,
-  useMultiFileAuthState, makeCacheableSignalKeyStore,
-} = require('@whiskeysockets/baileys');
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VERTEX PANEL</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config={darkMode:'class',theme:{extend:{colors:{dark:{900:'#0a0a0f',800:'#12121a',700:'#1a1a25',600:'#252530'},accent:{500:'#ef4444',600:'#dc2626',700:'#b91c1c'},gold:{500:'#f59e0b',600:'#d97706'},cyan:{500:'#06b6d4',600:'#0891b2'},purple:{500:'#a855f7',600:'#9333ea'},green:{500:'#22c55e',600:'#16a34a'}}}}}
+</script>
+<style>
+body{background:#0a0a0a;color:#e5e5e5;font-family:'Segoe UI',system-ui,sans-serif}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#12121a}::-webkit-scrollbar-thumb{background:#252530;border-radius:3px}
+.glow{box-shadow:0 0 20px rgba(239,68,68,0.15)}.glow-gold{box-shadow:0 0 20px rgba(245,158,11,0.15)}.glow-cyan{box-shadow:0 0 20px rgba(6,182,212,0.15)}.glow-purple{box-shadow:0 0 20px rgba(168,85,247,0.15)}.glow-green{box-shadow:0 0 20px rgba(34,197,94,0.15)}
+.pulse-dot{animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+#debug-modal,#email-modal{display:none}#debug-modal.show,#email-modal.show{display:flex}
+.report-row{animation:fadeSlide .3s ease}
+@keyframes fadeSlide{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
+.sending-pulse{animation:sendPulse 1.2s ease-in-out infinite}
+@keyframes sendPulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.success-flash{animation:successFlash .6s ease}
+@keyframes successFlash{0%{background-color:rgba(34,197,94,0.2)}100%{background-color:transparent}}
+.tab-btn{transition:all .2s ease}
+.tab-btn.active{background:#dc2626;color:#fff}
+.tab-btn:not(.active){background:#252530;color:#9ca3af}
+.tab-btn:not(.active):hover{color:#fff}
+.email-card,.prompt-card{animation:fadeSlide .3s ease}
+.number-tag{animation:popIn .2s ease}
+@keyframes popIn{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
+.target-card{cursor:pointer;transition:all .15s ease}
+.target-card:hover{border-color:#f59e0b;transform:translateY(-1px)}
+.target-card.active{border-color:#06b6d4;box-shadow:0 0 15px rgba(6,182,212,0.2)}
+.prompt-item{animation:fadeSlide .2s ease}
+.wa-email-row{animation:fadeSlide .2s ease}
+.matrix-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.email-report-result{animation:fadeSlide .2s ease}
+</style>
+<base target="_blank">
+</head>
+<body class="min-h-screen">
+<div class="max-w-6xl mx-auto p-4 md:p-6">
+  <!-- HEADER -->
+  <div class="flex items-center gap-3 mb-8">
+    <div class="w-10 h-10 rounded-lg bg-accent-600 flex items-center justify-center text-white font-bold text-lg">V</div>
+    <div><h1 class="text-xl font-bold text-white">VERTEX PANEL</h1><p class="text-xs text-gray-500">v4.8.3 — Matrix Mode | Every Email x Every Prompt x Every Address</p></div>
+    <div class="ml-auto flex items-center gap-3">
+      <button onclick="openDebug()" class="px-3 py-1.5 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs font-medium rounded-lg transition">Debug</button>
+      <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-green-500 pulse-dot"></span><span class="text-xs text-gray-400">Online</span></div>
+    </div>
+  </div>
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+  <!-- TABS -->
+  <div class="flex gap-2 mb-6 flex-wrap">
+    <button id="tab-sessions" onclick="switchTab('sessions')" class="tab-btn active px-4 py-2 rounded-lg text-xs font-medium">Sessions</button>
+    <button id="tab-emails" onclick="switchTab('emails')" class="tab-btn px-4 py-2 rounded-lg text-xs font-medium">Emails</button>
+    <button id="tab-numbers" onclick="switchTab('numbers')" class="tab-btn px-4 py-2 rounded-lg text-xs font-medium">Targets</button>
+    <button id="tab-prompts" onclick="switchTab('prompts')" class="tab-btn px-4 py-2 rounded-lg text-xs font-medium">Ban Prompts</button>
+    <button id="tab-waemails" onclick="switchTab('waemails')" class="tab-btn px-4 py-2 rounded-lg text-xs font-medium">WA Support</button>
+  </div>
 
-const DATA_DIR = path.join(__dirname, 'data');
-fs.mkdirSync(DATA_DIR, { recursive: true });
+  <!-- SESSIONS TAB -->
+  <div id="panel-sessions">
+    <div class="mb-8">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">WhatsApp Sessions</h2>
+        <button onclick="addSession()" class="px-3 py-1.5 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">+ Add Session</button>
+      </div>
+      <div id="session-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div id="empty-sessions" class="col-span-full text-center py-12 text-gray-600 text-sm">Loading...</div>
+      </div>
+    </div>
+    <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-8 glow">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Ban Configuration</h2>
+        <div id="active-target-badge" class="hidden px-3 py-1 bg-cyan-600/20 border border-cyan-600/40 rounded-lg text-xs text-cyan-400"></div>
+      </div>
+      <div class="flex gap-2 mb-5">
+        <button id="btn-num" onclick="setBanType('number')" class="px-4 py-2 rounded-lg text-xs font-medium transition bg-accent-600 text-white">Number</button>
+        <button id="btn-grp" onclick="setBanType('group')" class="px-4 py-2 rounded-lg text-xs font-medium transition bg-dark-600 text-gray-400 hover:text-white">Group</button>
+      </div>
+      <div id="inp-num" class="mb-4">
+        <label class="block text-xs text-gray-500 mb-1.5">Target Number</label>
+        <input id="target-number" type="text" placeholder="94771234567" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-accent-600">
+      </div>
+      <div id="inp-grp" class="mb-4 hidden">
+        <label class="block text-xs text-gray-500 mb-1.5">Group Invite Link</label>
+        <div class="flex gap-2">
+          <input id="target-group" type="text" placeholder="https://chat.whatsapp.com/..." class="flex-1 bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-accent-600">
+          <button onclick="resolveGroup()" class="px-4 py-2 bg-dark-600 hover:bg-dark-700 text-gray-300 text-xs rounded-lg transition">Resolve</button>
+        </div>
+        <div id="group-info" class="mt-2 text-xs text-gray-500"></div>
+      </div>
+      <div class="mb-5">
+        <label class="block text-xs text-gray-500 mb-1.5">Reports Per Session</label>
+        <div class="flex items-center gap-3">
+          <button onclick="changeCount(-1)" class="w-8 h-8 rounded-lg bg-dark-600 hover:bg-dark-700 text-gray-300 flex items-center justify-center transition">-</button>
+          <span id="report-count" class="text-lg font-bold text-white w-8 text-center">5</span>
+          <button onclick="changeCount(1)" class="w-8 h-8 rounded-lg bg-dark-600 hover:bg-dark-700 text-gray-300 flex items-center justify-center transition">+</button>
+        </div>
+      </div>
+      <div class="mb-5">
+        <label class="block text-xs text-gray-500 mb-2">Use Sessions</label>
+        <div id="session-checks" class="flex flex-wrap gap-2"><span class="text-xs text-gray-600">Link sessions first</span></div>
+      </div>
+      <!-- MATRIX PREVIEW -->
+      <div class="mb-5 p-4 bg-green-900/20 rounded-lg border border-green-600/30 glow-green">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-xs text-green-400 font-bold uppercase tracking-wider">Matrix Mode Preview</h3>
+          <span id="matrix-total" class="matrix-badge bg-green-600 text-white">0 emails</span>
+        </div>
+        <div class="grid grid-cols-3 gap-2 text-xs">
+          <div class="bg-dark-700/50 rounded p-2 text-center">
+            <div id="matrix-emails" class="text-lg font-bold text-white">0</div>
+            <div class="text-gray-500">User Emails</div>
+          </div>
+          <div class="bg-dark-700/50 rounded p-2 text-center">
+            <div id="matrix-prompts" class="text-lg font-bold text-white">0</div>
+            <div class="text-gray-500">Ban Prompts</div>
+          </div>
+          <div class="bg-dark-700/50 rounded p-2 text-center">
+            <div id="matrix-wa" class="text-lg font-bold text-white">0</div>
+            <div class="text-gray-500">WA Addresses</div>
+          </div>
+        </div>
+        <p class="text-xs text-gray-500 mt-2">ALL active emails send ALL prompts to ALL WA addresses. Target number auto-inserted into each prompt via {number}.</p>
+      </div>
+      <div class="flex flex-wrap gap-3">
+        <button onclick="executeBan()" id="btn-exec" class="flex-1 py-3 bg-accent-600 hover:bg-accent-700 disabled:bg-dark-600 disabled:text-gray-600 text-white font-semibold rounded-lg transition text-sm" disabled>EXECUTE BAN (Nodes+Emails)</button>
+        <button onclick="executeEmailOnly()" id="btn-email-only" class="flex-1 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-lg transition text-sm">EXECUTE EMAIL REPORT</button>
+      </div>
+    </div>
+    <div id="results-section" class="hidden mb-8">
+      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Live Report Feed</h2>
+      <div id="sending-indicator" class="hidden mb-3 flex items-center gap-3 px-4 py-3 bg-dark-700 rounded-lg border border-dark-600">
+        <div class="flex gap-1.5"><span class="w-2 h-2 rounded-full bg-accent-600 sending-pulse"></span><span class="w-2 h-2 rounded-full bg-accent-600 sending-pulse" style="animation-delay:0.3s"></span><span class="w-2 h-2 rounded-full bg-accent-600 sending-pulse" style="animation-delay:0.6s"></span></div>
+        <span class="text-accent-400 text-sm font-medium">Sending reports...</span>
+      </div>
+      <div id="results-list" class="space-y-1.5 mb-4"></div>
+      <div id="results-summary" class="bg-dark-800 rounded-lg border border-dark-600 p-4 text-sm hidden"></div>
+    </div>
+  </div>
 
-const DB_FILE = path.join(DATA_DIR, 'db.json');
-const sessions = new Map();
-const debugLog = [];
-const reportsRunning = {};
+  <!-- EMAILS TAB -->
+  <div id="panel-emails" class="hidden">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">SMTP Sender Emails — Unlimited</h2>
+      <button onclick="openEmailModal()" class="px-3 py-1.5 bg-gold-600 hover:bg-gold-500 text-white text-xs font-medium rounded-lg transition">+ Add Email</button>
+    </div>
+    <div class="bg-dark-800 rounded-xl border border-dark-600 p-4 mb-6 glow-gold">
+      <p class="text-xs text-gray-500">Add unlimited emails with App Passwords. ALL active emails will send ALL prompts to ALL WhatsApp support addresses when you execute a ban. Use {number} in prompts for auto-insertion.</p>
+      <p class="text-xs text-gray-500 mt-2">You can optionally override SMTP settings (Host, Port, Secure, Username) per email.</p>
+    </div>
+    <div id="email-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div id="empty-emails" class="col-span-full text-center py-12 text-gray-600 text-sm">No emails added yet. Click "+ Add Email" to start.</div>
+    </div>
+  </div>
+
+  <!-- TARGETS TAB – read‑only -->
+  <div id="panel-numbers" class="hidden">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Saved Ban Targets</h2>
+    </div>
+    <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-6 glow-gold">
+      <p class="text-xs text-gray-500">These are numbers you have previously added. They are for reference only. To send a report, enter a number in the Sessions tab and click EXECUTE EMAIL REPORT.</p>
+    </div>
+    <div id="targets-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div id="empty-targets" class="col-span-full text-center py-12 text-gray-600 text-sm">No targets saved.</div>
+    </div>
+  </div>
+
+  <!-- PROMPTS TAB -->
+  <div id="panel-prompts" class="hidden">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Ban Prompts — Unlimited</h2>
+      <div class="flex gap-2">
+        <button onclick="resetPrompts()" class="px-3 py-1.5 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs font-medium rounded-lg transition">Reset Defaults</button>
+        <button onclick="savePrompts()" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded-lg transition">Save Prompts</button>
+      </div>
+    </div>
+    <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-6 glow-cyan">
+      <h3 class="text-xs text-gray-500 mb-2">Prompt Placeholder</h3>
+      <p class="text-xs text-gray-600">Use <code class="bg-dark-700 px-1 py-0.5 rounded text-cyan-400">{number}</code> anywhere in your prompt. It will be replaced with the target number automatically.</p>
+      <p class="text-xs text-gray-600 mt-1">Example: "The account +<code class="text-cyan-400">{number}</code> is sharing CSAM..."</p>
+    </div>
+    <div id="prompts-list" class="space-y-2">
+      <div id="empty-prompts" class="text-center py-12 text-gray-600 text-sm">Loading prompts...</div>
+    </div>
+  </div>
+
+  <!-- WHATSAPP SUPPORT EMAILS TAB -->
+  <div id="panel-waemails" class="hidden">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">WhatsApp Support Emails</h2>
+      <button onclick="addWaEmail()" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium rounded-lg transition">+ Add WA Email</button>
+    </div>
+    <div class="bg-dark-800 rounded-xl border border-dark-600 p-6 mb-6 glow-purple">
+      <h3 class="text-xs text-gray-500 mb-2">Pre-Loaded WhatsApp Addresses</h3>
+      <p class="text-xs text-gray-600">Every active address below receives an email for EVERY prompt from EVERY user email. Toggle to enable/disable.</p>
+    </div>
+    <div id="wa-emails-list" class="space-y-2">
+      <div id="empty-waemails" class="text-center py-12 text-gray-600 text-sm">Loading WhatsApp emails...</div>
+    </div>
+  </div>
+</div>
+
+<!-- EMAIL MODAL -->
+<div id="email-modal" class="fixed inset-0 bg-black/80 z-50 items-center justify-center p-4">
+  <div class="bg-dark-800 rounded-xl border border-dark-600 w-full max-w-md flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-dark-600">
+      <h3 id="email-modal-title" class="text-sm font-bold text-white">Add Email</h3>
+      <button onclick="closeEmailModal()" class="text-gray-500 hover:text-white text-lg leading-none">&times;</button>
+    </div>
+    <div class="p-4 space-y-4">
+      <input type="hidden" id="email-edit-id" value="">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1.5">Email Address</label>
+        <input id="email-input" type="email" placeholder="example@gmail.com" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1.5">App Password</label>
+        <input id="app-password-input" type="text" placeholder="xxxx xxxx xxxx xxxx" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
+        <p class="text-xs text-gray-600 mt-1">Google: Account > Security > 2-Step Verification > App Passwords</p>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1.5">SMTP Host (optional)</label>
+        <input id="smtp-host-input" type="text" placeholder="smtp.sendgrid.net" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
+        <p class="text-xs text-gray-600 mt-1">Leave empty to auto-detect</p>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5">SMTP Port</label>
+          <input id="smtp-port-input" type="number" placeholder="587" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
+        </div>
+        <div class="flex items-end pb-1">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input id="smtp-secure-input" type="checkbox" class="accent-gold-600 w-4 h-4">
+            <span class="text-xs text-gray-400">Secure (SSL/TLS)</span>
+          </label>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1.5">SMTP Username (optional)</label>
+        <input id="smtp-user-input" type="text" placeholder="usually your email" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600">
+        <p class="text-xs text-gray-600 mt-1">Leave blank to use email address</p>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1.5">Notes</label>
+        <textarea id="email-notes-input" rows="2" placeholder="Optional notes..." class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gold-600 resize-none"></textarea>
+      </div>
+    </div>
+    <div class="p-4 border-t border-dark-600 flex gap-2">
+      <button onclick="saveEmail()" class="flex-1 py-2 bg-gold-600 hover:bg-gold-500 text-white text-sm font-medium rounded-lg transition">Save</button>
+      <button onclick="closeEmailModal()" class="px-4 py-2 bg-dark-600 hover:bg-dark-700 text-gray-300 text-sm rounded-lg transition">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- DEBUG MODAL -->
+<div id="debug-modal" class="fixed inset-0 bg-black/80 z-50 items-center justify-center p-4">
+  <div class="bg-dark-800 rounded-xl border border-dark-600 w-full max-w-2xl max-h-[80vh] flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-dark-600">
+      <h3 class="text-sm font-bold text-white">DEBUG LOG</h3>
+      <div class="flex gap-2">
+        <button onclick="refreshDebug()" class="px-3 py-1 bg-dark-600 hover:bg-dark-700 text-gray-300 text-xs rounded-lg transition">Refresh</button>
+        <button onclick="closeDebug()" class="px-3 py-1 bg-dark-600 hover:bg-dark-700 text-gray-300 text-xs rounded-lg transition">Close</button>
+      </div>
+    </div>
+    <div id="debug-info" class="p-4 border-b border-dark-600 text-xs text-gray-400"></div>
+    <div id="debug-logs" class="p-4 overflow-y-auto flex-1 font-mono text-xs space-y-1"></div>
+  </div>
+</div>
+
+<script>
+// ========================
+// GLOBAL STATE
+// ========================
+let sessions=[], emails=[], numberLinks=[], waEmails=[], prompts=[], banType='number', reportCount=5, groupJid=null, pollingIntervals={}, currentTab='sessions', activeTarget=null;
+
+async function api(p,b){return(await fetch('/api/'+p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})).json()}
+async function apiGet(p){return(await fetch('/api/'+p)).json()}
+async function apiPut(p,b){return(await fetch('/api/'+p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})).json()}
+async function apiDel(p){await fetch('/api/'+p,{method:'DELETE'})}
 
 // ========================
-// DEFAULT BAN PROMPTS (10 MAXIMUM POWER — with {number} placeholder)
+// TABS
 // ========================
-const DEFAULT_PROMPTS = [
-  "URGENT: The account +{number} is actively distributing child sexual abuse material (CSAM), child pornography, and explicit content involving minors under 18. Immediate law enforcement referral and account termination required.",
-  "CRITICAL REPORT: The number +{number} is sharing illegal pornographic material including underage content, revenge porn, and non-consensual intimate images. Account engaged in sexual exploitation of minors and unauthorized distribution of private media.",
-  "BAN REQUEST: The account +{number} is a mass spam bot sending unsolicited adult content, phishing links, and malicious URLs to hundreds of users. Automated distribution of explicit pornography and fraudulent content across multiple WhatsApp groups.",
-  "SEVERE VIOLATION: The number +{number} is illegally selling and charging for pornographic content, promoting prostitution, and distributing explicit material for profit. Human trafficking indicators detected through payment solicitations.",
-  "HARASSMENT REPORT: The account +{number} is sending threatening messages, explicit media without consent, and sexually harassing content to multiple victims. Stalking behavior and non-consensual sharing of intimate images confirmed.",
-  "MINOR SAFETY ALERT: The number +{number} is impersonating minors to solicit inappropriate content from underage users. Predatory behavior targeting children through fake profiles and grooming tactics. Immediate ban and investigation required.",
-  "SPAM & ABUSE: The account +{number} is a bot network distributing pornographic content, malicious links, and scam offers across WhatsApp groups. Coordinated inauthentic behavior with automated explicit content flooding.",
-  "REVENGE PORN: The number +{number} is systematically sharing non-consensual intimate images and videos of victims without permission. Doxxing and sexual harassment campaign targeting specific individuals for blackmail.",
-  "TERRORISM & EXPLOITATION: The account +{number} is promoting illegal adult services, human trafficking recruitment, and sexual exploitation through WhatsApp Business. Financial transactions linked to criminal prostitution network.",
-  "MULTI-VIOLATION: The account +{number} is involved in CSAM distribution + child grooming + revenge porn + spam bot + phishing + harassment. This account violates every major WhatsApp policy simultaneously. Permanent ban and data preservation for authorities."
-];
-
-// ========================
-// WHATSAPP SUPPORT EMAILS (pre-loaded)
-// ========================
-const DEFAULT_WHATSAPP_EMAILS = [
-  { id: 'wem_1', email: 'support@whatsapp.com', label: 'Main Support', active: true },
-  { id: 'wem_2', email: 'abuse@whatsapp.com', label: 'Abuse Team', active: true },
-  { id: 'wem_3', email: 'legal@whatsapp.com', label: 'Legal Team', active: true },
-  { id: 'wem_4', email: 'security@whatsapp.com', label: 'Security', active: true },
-  { id: 'wem_5', email: 'safety@whatsapp.com', label: 'Safety Team', active: true },
-  { id: 'wem_6', email: 'lawenforcement@whatsapp.com', label: 'Law Enforcement', active: true },
-  { id: 'wem_7', email: 'report@support.whatsapp.com', label: 'Report Support', active: true }
-];
-
-// ========================
-// DATABASE / PERSISTENCE
-// ========================
-function loadDB() {
-  try {
-    if (fs.existsSync(DB_FILE)) {
-      const raw = fs.readFileSync(DB_FILE, 'utf8');
-      return JSON.parse(raw);
-    }
-  } catch (e) { log('DB load error: ' + e.message); }
-  return { emails: [], targets: [], whatsappEmails: DEFAULT_WHATSAPP_EMAILS, prompts: DEFAULT_PROMPTS, settings: {} };
-}
-
-function saveDB() {
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
-  } catch (e) { log('DB save error: ' + e.message); }
-}
-
-let db = loadDB();
-if (!db.emails) db.emails = [];
-if (!db.targets) db.targets = [];
-if (!db.whatsappEmails || !db.whatsappEmails.length) db.whatsappEmails = DEFAULT_WHATSAPP_EMAILS;
-if (!db.prompts || !db.prompts.length) db.prompts = DEFAULT_PROMPTS;
-if (!db.settings) db.settings = {};
-
-function log(msg) {
-  const t = new Date().toISOString();
-  debugLog.push({ time: t, msg });
-  if (debugLog.length > 500) debugLog.shift();
-  console.log('[' + t + '] ' + msg);
-}
-
-async function makeQRImage(data) {
-  try {
-    return await QRCode.toDataURL(data, { width: 250, margin: 1, color: { dark: '#ffffff', light: '#12121a' } });
-  } catch (e) { return null; }
-}
-
-function getNextId() {
-  const dirs = fs.readdirSync(DATA_DIR).filter(d => d.startsWith('auth_s_'));
-  let max = -1;
-  for (const d of dirs) {
-    const n = parseInt(d.replace('auth_s_', ''));
-    if (!isNaN(n) && n > max) max = n;
-  }
-  return 's_' + (max + 1);
-}
-
-function generateEmailId() { return 'em_' + Date.now() + '_' + Math.floor(Math.random() * 10000); }
-function getEmailById(id) { return db.emails.find(e => e.id === id); }
-function getEmailByAddress(address) { return db.emails.find(e => e.email.toLowerCase() === address.toLowerCase()); }
-
-// ========================
-// SMTP / EMAIL SENDING (with custom SMTP per email)
-// ========================
-async function sendEmailViaSMTP(emailObj, toAddress, subject, htmlBody, textBody) {
-  return new Promise(async (resolve) => {
-    const fromEmail = emailObj.email;
-    const pass = emailObj.appPassword;
-
-    let configs = [];
-    if (emailObj.smtpHost && emailObj.smtpPort) {
-      // Custom config
-      configs.push({
-        host: emailObj.smtpHost,
-        port: parseInt(emailObj.smtpPort),
-        secure: emailObj.smtpSecure === true || emailObj.smtpSecure === 'true',
-        user: emailObj.smtpUser || fromEmail,
-        pass: pass,
-        label: 'custom'
-      });
-    } else {
-      // Auto-detect based on domain
-      const domain = fromEmail.split('@')[1].toLowerCase();
-      let cfg;
-      if (domain.includes('yahoo')) cfg = { host: 'smtp.mail.yahoo.com', port: 465, secure: true };
-      else if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live')) cfg = { host: 'smtp-mail.outlook.com', port: 587, secure: false };
-      else if (domain.includes('icloud') || domain.includes('me.com')) cfg = { host: 'smtp.mail.me.com', port: 587, secure: false };
-      else if (domain.includes('yandex')) cfg = { host: 'smtp.yandex.com', port: 465, secure: true };
-      else if (domain.includes('zoho')) cfg = { host: 'smtp.zoho.com', port: 587, secure: false };
-      else {
-        // Gmail default with fallback
-        cfg = { host: 'smtp.gmail.com', port: 465, secure: true, fallbackPort: 587, fallbackSecure: false };
-      }
-      configs.push({ host: cfg.host, port: cfg.port, secure: cfg.secure, user: fromEmail, pass: pass, label: 'primary' });
-      if (cfg.fallbackPort) {
-        configs.push({ host: cfg.host, port: cfg.fallbackPort, secure: cfg.fallbackSecure, user: fromEmail, pass: pass, label: 'fallback' });
-      }
-    }
-
-    let lastError = null;
-    for (const conf of configs) {
-      try {
-        log(`SMTP attempt to ${conf.host}:${conf.port} (secure:${conf.secure}) using ${conf.user}`);
-        const transporter = nodemailer.createTransport({
-          host: conf.host,
-          port: conf.port,
-          secure: conf.secure,
-          auth: { user: conf.user, pass: conf.pass },
-          tls: { rejectUnauthorized: false },
-          connectionTimeout: 60000,
-          greetingTimeout: 60000,
-          socketTimeout: 60000,
-        });
-
-        const info = await transporter.sendMail({
-          from: '"VERTEX Abuse Report" <' + fromEmail + '>',
-          to: toAddress,
-          subject: subject,
-          text: textBody,
-          html: htmlBody
-        });
-
-        transporter.close();
-        resolve({ to: toAddress, ok: true, id: info.messageId });
-        return;
-      } catch (e) {
-        lastError = e.message;
-        log(`SMTP attempt to ${conf.host}:${conf.port} (secure:${conf.secure}) failed: ${e.message}`);
-        // continue to next config
-      }
-    }
-    resolve({ to: toAddress, ok: false, error: lastError || 'All SMTP attempts failed' });
+function switchTab(tab){
+  currentTab=tab;
+  ['sessions','emails','numbers','prompts','waemails'].forEach(t=>{
+    document.getElementById('tab-'+t).className=tab===t?'tab-btn active px-4 py-2 rounded-lg text-xs font-medium':'tab-btn px-4 py-2 rounded-lg text-xs font-medium';
+    document.getElementById('panel-'+t).classList.toggle('hidden',tab!==t);
   });
-}
-
-function buildEmailBodies(targetNumber, promptText, fromEmail) {
-  const now = new Date().toISOString();
-  const subject = 'WhatsApp Abuse Report — +' + targetNumber;
-
-  const textBody = [
-    'WHATSAPP ABUSE REPORT',
-    '=====================',
-    '',
-    'Reported Number: +' + targetNumber,
-    'Report Content: ' + promptText,
-    'Reporter Email: ' + fromEmail,
-    'Timestamp: ' + now,
-    '',
-    'This is an automated abuse report submitted through the VERTEX reporting system.',
-    'Please review and take immediate action against the reported WhatsApp account.',
-    '',
-    '— VERTEX Abuse Reporting System'
-  ].join('\n');
-
-  const htmlBody = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>WhatsApp Abuse Report</title></head>
-<body style="background:#0a0a0a;color:#e5e5e5;font-family:Arial,sans-serif;padding:20px;">
-<div style="max-width:600px;margin:0 auto;background:#12121a;border:1px solid #252530;border-radius:12px;padding:24px;">
-  <h2 style="color:#ef4444;margin-top:0;">WHATSAPP ABUSE REPORT</h2>
-  <p style="color:#9ca3af;font-size:12px;">Submitted via VERTEX Panel</p>
-  <hr style="border-color:#252530;margin:16px 0;">
-  <table style="width:100%;color:#e5e5e5;font-size:14px;">
-    <tr><td style="color:#9ca3af;padding:6px 0;width:140px;">Reported Number</td><td style="font-weight:bold;color:#f59e0b;">+${targetNumber}</td></tr>
-    <tr><td style="color:#9ca3af;padding:6px 0;">Reporter</td><td>${fromEmail}</td></tr>
-    <tr><td style="color:#9ca3af;padding:6px 0;">Timestamp</td><td>${now}</td></tr>
-  </table>
-  <hr style="border-color:#252530;margin:16px 0;">
-  <h3 style="color:#f59e0b;font-size:13px;">REPORT CONTENT:</h3>
-  <div style="background:#1a1a25;border:1px solid #252530;border-radius:8px;padding:12px;font-size:13px;line-height:1.6;color:#e5e5e5;">${escapeHtml(promptText)}</div>
-  <hr style="border-color:#252530;margin:16px 0;">
-  <p style="color:#9ca3af;font-size:12px;">This is an automated abuse report. Please review and take immediate action.</p>
-  <p style="color:#6b7280;font-size:11px;">— VERTEX Abuse Reporting System</p>
-</div></body></html>`;
-
-  return { subject, textBody, htmlBody };
-}
-
-function escapeHtml(text) {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  if(tab==='emails') loadEmails();
+  if(tab==='numbers'){ loadEmails(); loadNumbers(); }
+  if(tab==='prompts') loadPrompts();
+  if(tab==='waemails') loadWaEmails();
 }
 
 // ========================
-// SESSION / BAILEYS
+// DEBUG
 // ========================
-async function createSession(id, phone, method) {
-  const dir = path.join(DATA_DIR, 'auth_' + id);
-  fs.mkdirSync(dir, { recursive: true });
-  const { state, saveCreds } = await useMultiFileAuthState(dir);
-  const { version } = await fetchLatestBaileysVersion();
-  log(id + ' Starting. Baileys ' + JSON.stringify(version));
+function openDebug(){document.getElementById('debug-modal').classList.add('show');refreshDebug()}
+function closeDebug(){document.getElementById('debug-modal').classList.remove('show')}
+async function refreshDebug(){
+  try{
+    const d=await apiGet('debug');
+    let ai='';
+    if(d.authDirs&&d.authDirs.length)ai='<br><span class="text-gray-500 mt-1 block">Auth:</span> '+d.authDirs.map(a=>'<span class="'+(a.hasCreds?'text-green-400':'text-gray-500')+'">'+a.dir+(a.hasCreds?' ('+(a.registered?'reg':'unreg')+')':' (empty)')+'</span>').join(' ');
+    document.getElementById('debug-info').innerHTML='<span class="text-gray-500">Node:</span> <span class="text-white">'+d.node+'</span> <span class="text-gray-500">Baileys:</span> <span class="text-white">'+d.baileys+'</span> <span class="text-gray-500">Sessions:</span> <span class="text-white">'+d.sessions+'</span> <span class="text-gray-500">Emails:</span> <span class="text-white">'+d.emails+'</span> <span class="text-gray-500">Links:</span> <span class="text-white">'+d.numberLinks+'</span> <span class="text-gray-500">WA:</span> <span class="text-white">'+d.whatsappEmails+'</span> <span class="text-gray-500">Prompts:</span> <span class="text-white">'+d.prompts+'</span>'+ai;
+    document.getElementById('debug-logs').innerHTML=d.logs.map(l=>{let c='text-gray-400';if(l.msg.includes('CLOSED')||l.msg.includes('error')||l.msg.includes('Error'))c='text-red-400';else if(l.msg.includes('QR')||l.msg.includes('OPEN')||l.msg.includes('Sent')||l.msg.includes('Message sent'))c='text-green-400';else if(l.msg.includes('Reconnect'))c='text-yellow-400';return'<div class="'+c+'">['+l.time.split('T')[1].split('.')[0]+'] '+l.msg+'</div>'}).join('');
+    document.getElementById('debug-logs').scrollTop=99999;
+  }catch(e){document.getElementById('debug-logs').innerHTML='<div class="text-red-400">'+e.message+'</div>'}
+}
 
-  const sock = makeWASocket({
-    version,
-    auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })) },
-    printQRInTerminal: false,
-    logger: pino({ level: 'silent' }),
-    browser: ['VERTEX Panel', 'Chrome', '1.0.0'],
-    connectTimeoutMs: 60000,
-    keepAliveIntervalMs: 15000,
-    markOnlineOnConnect: false,
-  });
+// ========================
+// SESSIONS
+// ========================
+async function loadExistingSessions(){
+  try{
+    const list=await apiGet('sessions');
+    for(const s of list){
+      const lid='loaded_'+s.id;
+      sessions.push({id:s.id,localId:lid,phone:s.phone,method:'qr',qrImage:s.qrImage,code:s.code,status:s.status,error:s.error,selected:true,reports:s.reports,banStatus:s.banStatus,banMessageStatus:s.banMessageStatus});
+      if(s.status!=='linked')pollingIntervals[lid]=setInterval(()=>pollSession(lid),2000);
+    }
+    renderSessions();
+  }catch(e){}
+}
+function addSession(){sessions.push({id:null,localId:'local_'+Date.now(),phone:'',method:'qr',qrImage:null,code:null,status:'new',error:null,selected:true,reports:null,banStatus:null,banMessageStatus:null});renderSessions()}
+function removeSession(lid){const s=sessions.find(x=>x.localId===lid);if(s&&s.id)apiDel('session/'+s.id);if(pollingIntervals[lid]){clearInterval(pollingIntervals[lid]);delete pollingIntervals[lid]}sessions=sessions.filter(x=>x.localId!==lid);renderSessions()}
+async function linkSession(lid){
+  const s=sessions.find(x=>x.localId===lid);if(!s)return;
+  s.status='connecting';s.qrImage=null;s.code=null;s.error=null;renderSessions();
+  try{
+    const res=await api('link',{phone:s.phone,method:s.method});
+    s.id=res.id;s.qrImage=res.qrImage;s.code=res.code;s.status=res.status;s.error=res.error;renderSessions();
+    if(pollingIntervals[lid])clearInterval(pollingIntervals[lid]);
+    pollingIntervals[lid]=setInterval(()=>pollSession(lid),2000);
+  }catch(e){s.status='error';s.error=e.message;renderSessions()}
+}
+async function pollSession(lid){
+  const s=sessions.find(x=>x.localId===lid);if(!s||!s.id)return;
+  try{
+    const res=await api('check',{id:s.id});
+    if(res.error==='Not found'){s.status='error';s.error='Session lost';clearInterval(pollingIntervals[lid]);renderSessions();return}
+    const ch=s.status!==res.status||s.code!==res.code||s.qrImage!==res.qrImage||s.error!==res.error||JSON.stringify(s.reports)!==JSON.stringify(res.reports)||s.banStatus!==res.banStatus||s.banMessageStatus!==res.banMessageStatus;
+    s.status=res.status;s.code=res.code||s.code;s.qrImage=res.qrImage||s.qrImage;s.error=res.error;s.reports=res.reports;s.banStatus=res.banStatus;s.banMessageStatus=res.banMessageStatus;
+    if(ch)renderSessions();
+  }catch(e){}
+}
+function toggleMethod(lid,m){const s=sessions.find(x=>x.localId===lid);if(s){s.method=m;s.qrImage=null;s.code=null;s.status='new';s.error=null;renderSessions()}}
+function toggleSelect(lid){const s=sessions.find(x=>x.localId===lid);if(s){s.selected=!s.selected;renderSessions();updateExecBtn()}}
+function setBanType(t){
+  banType=t;
+  document.getElementById('btn-num').className=t==='number'?'px-4 py-2 rounded-lg text-xs font-medium transition bg-accent-600 text-white':'px-4 py-2 rounded-lg text-xs font-medium transition bg-dark-600 text-gray-400 hover:text-white';
+  document.getElementById('btn-grp').className=t==='group'?'px-4 py-2 rounded-lg text-xs font-medium transition bg-accent-600 text-white':'px-4 py-2 rounded-lg text-xs font-medium transition bg-dark-600 text-gray-400 hover:text-white';
+  document.getElementById('inp-num').classList.toggle('hidden',t!=='number');
+  document.getElementById('inp-grp').classList.toggle('hidden',t!=='group');
+}
+function changeCount(d){reportCount=Math.max(1,Math.min(50,reportCount+d));document.getElementById('report-count').textContent=reportCount}
+async function resolveGroup(){
+  const link=document.getElementById('target-group').value.trim();if(!link)return;
+  const linked=sessions.filter(s=>s.status==='linked');
+  if(!linked.length){document.getElementById('group-info').innerHTML='<span class="text-red-400">Link a session first</span>';return}
+  document.getElementById('group-info').innerHTML='<span class="text-gray-500">Resolving...</span>';
+  try{const res=await api('group',{id:linked[0].id,link});groupJid=res.id;document.getElementById('group-info').innerHTML='<span class="text-green-400">"'+res.name+'" - '+res.members+' members</span>'}
+  catch(e){groupJid=null;document.getElementById('group-info').innerHTML='<span class="text-red-400">'+(e.error||'Failed')+'</span>'}
+}
+function updateExecBtn(){
+  const linked=sessions.filter(s=>s.status==='linked'&&s.selected);
+  document.getElementById('btn-exec').disabled=linked.length===0;
+  const checks=document.getElementById('session-checks');
+  if(!linked.length&&sessions.length)checks.innerHTML='<span class="text-xs text-gray-600">No linked sessions selected</span>';
+}
+function renderSessions(){
+  const grid=document.getElementById('session-grid');
+  if(!sessions.length){grid.innerHTML='';grid.appendChild(createEmpty());renderChecks();updateExecBtn();return}
+  grid.innerHTML=sessions.map(s=>{
+    const sc=s.status==='linked'?'green':s.status==='error'?'red':'yellow';
+    const st=s.status==='linked'?'Linked':s.status==='error'?'Error':s.status==='waiting'?'Waiting':s.status==='connecting'?'Connecting':'Ready';
+    let bot='';
+    if(s.status==='linked')bot='<div class="flex items-center gap-2"><input type="checkbox" '+(s.selected?'checked':'')+' onchange="toggleSelect(\''+s.localId+'\')" class="accent-accent-600"><span class="text-xs text-gray-400">Use for ban</span></div>';
+    else if(s.status==='error')bot='<button onclick="linkSession(\''+s.localId+'\')" class="w-full py-2 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">Retry</button>';
+    else bot='<button onclick="linkSession(\''+s.localId+'\')" class="w-full py-2 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-lg transition">Link</button>';
+    let qrH=s.method==='qr'&&s.qrImage?'<div class="flex justify-center mb-3 bg-dark-700 rounded-lg p-3"><img src="'+s.qrImage+'" style="width:180px;border-radius:8px;"></div>':s.method==='qr'&&(s.status==='connecting'||s.status==='waiting')?'<div class="flex justify-center mb-3 py-6 text-gray-500 text-xs">Connecting...</div>':'';
+    let codeH=s.method==='code'&&s.code?'<div class="text-center mb-3 py-3 bg-dark-700 rounded-lg"><div class="text-2xl font-bold text-white tracking-widest">'+s.code+'</div><div class="text-xs text-gray-500 mt-1">Enter on phone</div></div>':'';
+    let pTag=s.localId.startsWith('loaded_')?'<div class="text-xs text-green-500/50 mb-2">Persistent</div>':'';
+    return'<div class="bg-dark-800 rounded-xl border border-dark-600 p-4"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-'+sc+'-500 '+(s.status==='waiting'||s.status==='connecting'?'pulse-dot':'')+'"></span><span class="text-xs text-gray-400">'+st+'</span></div><button onclick="removeSession(\''+s.localId+'\')" class="text-gray-600 hover:text-red-400 text-xs transition">X</button></div>'+pTag+(s.method==='code'?'<input type="text" placeholder="Phone number" value="'+s.phone+'" onchange="updatePhone(\''+s.localId+'\',this.value)" class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 mb-3 focus:outline-none focus:border-accent-600">':'')+'<div class="flex gap-1.5 mb-3"><button onclick="toggleMethod(\''+s.localId+'\',\'qr\')" class="flex-1 py-1.5 rounded text-xs font-medium transition '+(s.method==='qr'?'bg-accent-600 text-white':'bg-dark-600 text-gray-500')+'">QR</button><button onclick="toggleMethod(\''+s.localId+'\',\'code\')" class="flex-1 py-1.5 rounded text-xs font-medium transition '+(s.method==='code'?'bg-accent-600 text-white':'bg-dark-600 text-gray-500')+'">Code</button></div>'+qrH+codeH+(s.error?'<div class="text-xs text-red-400 mb-3">'+s.error+'</div>':'')+bot+'</div>';
+  }).join('');
+  renderChecks();updateExecBtn();
+}
+function createEmpty(){const d=document.createElement('div');d.id='empty-sessions';d.className='col-span-full text-center py-12 text-gray-600 text-sm';d.textContent='No sessions. Click "+ Add Session" to start.';return d}
+function renderChecks(){
+  const el=document.getElementById('session-checks');
+  const linked=sessions.filter(s=>s.status==='linked');
+  if(!linked.length){el.innerHTML='<span class="text-xs text-gray-600">Link sessions first</span>';return}
+  el.innerHTML=linked.map(s=>'<label class="flex items-center gap-1.5 px-2.5 py-1.5 bg-dark-700 rounded-lg cursor-pointer"><input type="checkbox" '+(s.selected?'checked':'')+' onchange="toggleSelect(\''+s.localId+'\')" class="accent-accent-600"><span class="text-xs text-gray-300">'+(s.phone||s.id)+'</span></label>').join('');
+}
+function updatePhone(lid,v){const s=sessions.find(x=>x.localId===lid);if(s)s.phone=v}
 
-  const sess = sessions.get(id);
-  if (!sess) return;
-  sess.sock = sock;
-  sock.ev.on('creds.update', saveCreds);
-
-  if (method === 'code' && phone && !state.creds.registered) {
-    const clean = String(phone).replace(/\D/g, '').replace(/^0+/, '');
-    setTimeout(async () => {
-      try {
-        const code = await sock.requestPairingCode(clean);
-        sess.code = code.match(/.{1,4}/g)?.join('-') || code;
-        sess.status = 'waiting';
-        log(id + ' Code: ' + sess.code);
-      } catch (e) {
-        sess.status = 'error';
-        sess.error = 'Code failed: ' + e.message;
-        log(id + ' ' + sess.error);
-      }
-    }, 3000);
+// ========================
+// MATRIX BAN EXECUTION (Nodes + Emails)
+// ========================
+async function executeBan(){
+  const linked=sessions.filter(s=>s.status==='linked'&&s.selected);
+  if(!linked.length)return;
+  let target;
+  let targetNumber='';
+  if(banType==='number'){
+    targetNumber=document.getElementById('target-number').value.replace(/\D/g,'');
+    if(targetNumber.startsWith('0'))targetNumber=targetNumber.substring(1);
+    target=targetNumber+'@s.whatsapp.net';
+  }else{
+    if(!groupJid){alert('Resolve group first');return}
+    target=groupJid;
   }
+  if(!target||target==='@s.whatsapp.net'){alert('Enter a valid target');return}
 
-  sock.ev.on('connection.update', async (up) => {
-    const { connection, lastDisconnect, qr } = up;
-    if (qr) {
-      sess.qrImage = await makeQRImage(qr);
-      if (sess.status !== 'waiting') sess.status = 'waiting';
-      log(id + ' QR generated');
-    }
-    if (connection === 'open') {
-      sess.status = 'linked';
-      sess.error = null;
-      log(id + ' OPEN as ' + (sock.user?.id || 'unknown'));
-    }
-    if (connection === 'close') {
-      const code = lastDisconnect?.error?.output?.statusCode;
-      const msg = lastDisconnect?.error?.message || '';
-      log(id + ' CLOSED code=' + code + ' msg=' + msg);
-      if (code === DisconnectReason.loggedOut) {
-        sess.status = 'error';
-        sess.error = 'Logged out from phone';
-        try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
-        sessions.delete(id);
-      } else {
-        sess.status = 'connecting';
-        sess.error = null;
-        const waitTime = code === 409 ? 8000 : 3000;
-        log(id + ' Reconnect in ' + (waitTime / 1000) + 's...');
-        setTimeout(() => {
-          if (reportsRunning[id]) return;
-          if (sessions.has(id) && sessions.get(id).status !== 'linked') {
-            createSession(id, phone, method).catch(e => log(id + ' Reconnect err: ' + e.message));
-          }
-        }, waitTime);
-      }
-    }
-  });
-  return sock;
-}
+  const btn=document.getElementById('btn-exec');btn.disabled=true;btn.textContent='SENDING...';
+  const rs=document.getElementById('results-section');const rl=document.getElementById('results-list');const si=document.getElementById('sending-indicator');const sm=document.getElementById('results-summary');
+  rs.classList.remove('hidden');rl.innerHTML='';sm.classList.add('hidden');
 
-// ========================
-// ROUTES
-// ========================
-
-app.get('/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
-
-app.get('/api/sessions', (req, res) => {
-  const list = [];
-  for (const [id, s] of sessions) {
-    list.push({ id: s.id, phone: s.phone, status: s.status, code: s.code, qrImage: s.qrImage, error: s.error, reports: s.reports, banStatus: s.banStatus, banMessageStatus: s.banMessageStatus });
-  }
-  res.json(list);
-});
-
-app.get('/api/debug', (req, res) => {
-  const authDirs = [];
-  try {
-    for (const d of fs.readdirSync(DATA_DIR).filter(d => d.startsWith('auth_'))) {
-      const cf = path.join(DATA_DIR, d, 'creds.json');
-      const info = { dir: d, hasCreds: false, registered: false };
-      if (fs.existsSync(cf)) {
-        info.hasCreds = true;
-        try { info.registered = JSON.parse(fs.readFileSync(cf, 'utf8')).registered; } catch (e) {}
-      }
-      authDirs.push(info);
-    }
-  } catch (e) {}
-  res.json({
-    node: process.version,
-    baileys: require('@whiskeysockets/baileys/package.json').version,
-    platform: process.platform,
-    sessions: sessions.size,
-    emails: db.emails.length,
-    targets: db.targets.length,
-    whatsappEmails: db.whatsappEmails.filter(e => e.active).length + '/' + db.whatsappEmails.length,
-    prompts: db.prompts.length,
-    authDirs,
-    logs: debugLog.slice(-50)
-  });
-});
-
-app.post('/api/link', async (req, res) => {
-  try {
-    const { phone, method } = req.body || {};
-    const id = getNextId();
-    log('Link: ' + id + ' method=' + (method || 'qr') + ' phone=' + (phone || 'none'));
-    const sess = { id, phone: phone || '', sock: null, qrImage: null, code: null, status: 'connecting', error: null, reports: null, banStatus: null, banMessageStatus: null };
-    sessions.set(id, sess);
-    await createSession(id, phone, method);
-    await new Promise(r => setTimeout(r, method === 'code' ? 4500 : 3000));
-    const s = sessions.get(id);
-    res.json({ id: s.id, qrImage: s.qrImage, code: s.code, status: s.status, error: s.error });
-  } catch (e) {
-    log('Link error: ' + e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.post('/api/check', (req, res) => {
-  const s = sessions.get(req.body.id);
-  if (!s) return res.status(404).json({ error: 'Not found' });
-  res.json({ id: s.id, status: s.status, phone: s.phone, code: s.code, qrImage: s.qrImage, error: s.error, reports: s.reports, banStatus: s.banStatus, banMessageStatus: s.banMessageStatus });
-});
-
-// ---- MATRIX BAN: ALL Emails x ALL Prompts x ALL WA Addresses ----
-app.post('/api/ban', async (req, res) => {
-  const banId = req.body.id;
-  try {
-    const s = sessions.get(banId);
-    if (!s) return res.status(400).json({ error: 'Session not found' });
-    if (s.status !== 'linked' || !s.sock) return res.status(400).json({ error: 'Not linked' });
-
-    const target = req.body.target;
-    const type = req.body.type;
-    const count = req.body.count || 5;
-    const targetNumber = req.body.targetNumber || '';
-
-    const activeUserEmails = db.emails.filter(e => e.status === 'active');
-
-    reportsRunning[banId] = true;
-    res.json({ started: true, id: s.id });
-
-    await new Promise(r => setTimeout(r, 1500));
-
-    log(banId + ' Starting MATRIX BAN to ' + target + ' | targetNumber=' + targetNumber);
-    s.reports = [];
-    s.banStatus = 'sending';
-    s.banMessageStatus = null;
-
-    // ---- 1. Send WhatsApp report nodes ----
-    for (let i = 0; i < count; i++) {
-      s.reports.push({ i: i + 1, status: 'sending' });
-      try {
-        const reportType = type === 'group' ? 'inappropriate' : 'spam';
-        await s.sock.sendNode({
-          tag: 'iq',
-          attrs: { to: 's.whatsapp.net', type: 'set', id: 'report-' + banId + '-' + Date.now() + '-' + i },
-          content: [{ tag: 'report', attrs: { xmlns: 'urn:xmpp:whatsapp:report', jid: target, type: reportType } }]
-        });
-        await new Promise(r => setTimeout(r, 800));
-        s.reports[i].status = 'sent';
-        log(banId + ' [' + (i + 1) + '/' + count + '] Node SENT');
-      } catch (e) {
-        s.reports[i].status = 'failed';
-        s.reports[i].error = e.message || 'Unknown';
-        log(banId + ' [' + (i + 1) + '/' + count + '] Node FAIL: ' + (e.message || 'Unknown'));
-      }
-      if (i < count - 1) {
-        const delay = 2500 + Math.floor(Math.random() * 2500);
-        await new Promise(r => setTimeout(r, delay));
-      }
-    }
-
-    const sent = s.reports.filter(r => r.status === 'sent').length;
-    const failed = s.reports.filter(r => r.status !== 'sent').length;
-    log(banId + ' Nodes done. Sent=' + sent + ' Failed=' + failed);
-
-    // ---- 2. MATRIX EMAIL: ALL user emails x ALL prompts x ALL WA addresses ----
-    const activeWaEmails = db.whatsappEmails.filter(we => we.active).map(we => we.email);
-    const allPrompts = db.prompts;
-    let emailResults = [];
-
-    if (activeUserEmails.length > 0 && activeWaEmails.length > 0 && allPrompts.length > 0 && targetNumber) {
-      const totalEmails = activeUserEmails.length * allPrompts.length * activeWaEmails.length;
-      log(banId + ' Starting MATRIX EMAIL: ' + activeUserEmails.length + ' emails x ' + allPrompts.length + ' prompts x ' + activeWaEmails.length + ' addresses = ' + totalEmails + ' total emails');
-
-      for (const userEmail of activeUserEmails) {
-        if (!userEmail.appPassword) {
-          log('Skip email ' + userEmail.email + ': no app password');
-          continue;
+  for(const s of linked){
+    try{await api('ban',{id:s.id,target,type:banType,count:reportCount,targetNumber})}catch(e){}
+    const lid=s.localId;
+    const intv=setInterval(async()=>{
+      const s=sessions.find(x=>x.localId===lid);if(!s){clearInterval(intv);return}
+      const res=await api('check',{id:s.id});
+      s.reports=res.reports;s.banStatus=res.banStatus;s.banMessageStatus=res.banMessageStatus;
+      if(res.reports&&res.reports.length){
+        si.classList.add('hidden');
+        let html='';
+        for(const r of res.reports){
+          const ok=r.status==='sent';
+          html+='<div class="report-row flex items-center gap-2 px-3 py-1.5 rounded-lg '+(ok?'bg-green-900/30 border border-green-800/50':'bg-red-900/30 border border-red-800/50')+'"><span class="text-xs text-gray-500 w-6">#'+(r.i+1)+'</span><span class="w-2 h-2 rounded-full '+(ok?'bg-green-500':'bg-red-500')+'"></span><span class="text-xs '+(ok?'text-green-400':'text-red-400')+'">'+(ok?'Sent':'Failed')+(r.error?' — '+r.error:'')+'</span></div>';
         }
-        for (const promptTemplate of allPrompts) {
-          const promptText = promptTemplate.replace(/\{number\}/g, targetNumber);
-          const { subject, textBody, htmlBody } = buildEmailBodies(targetNumber, promptText, userEmail.email);
-
-          for (const waEmail of activeWaEmails) {
-            const result = await sendEmailViaSMTP(userEmail, waEmail, subject, htmlBody, textBody);
-            emailResults.push({ from: userEmail.email, to: waEmail, prompt: promptText.substring(0, 40), ...result });
-            if (result.ok) {
-              log('Email SENT: ' + userEmail.email + ' -> ' + waEmail);
-            } else {
-              log('Email FAIL: ' + userEmail.email + ' -> ' + waEmail + ' | ' + result.error);
-            }
-            await new Promise(r => setTimeout(r, 500 + Math.floor(Math.random() * 1000)));
-          }
-        }
+        rl.innerHTML=html;
       }
-
-      const okCount = emailResults.filter(r => r.ok).length;
-      log(banId + ' Matrix email complete. Total: ' + emailResults.length + ' | OK: ' + okCount + ' | FAIL: ' + (emailResults.length - okCount));
-    } else {
-      log(banId + ' Skipping matrix email: emails=' + activeUserEmails.length + ' wa=' + activeWaEmails.length + ' prompts=' + allPrompts.length + ' number=' + targetNumber);
-    }
-
-    // ---- 3. WHATSAPP SUMMARY ----
-    s.banMessageStatus = 'sending';
-    try {
-      const ownerJid = s.sock.user?.id;
-      if (ownerJid) {
-        const targetNum = target.replace('@s.whatsapp.net', '').replace('@g.us', '');
-        const rate = count > 0 ? Math.round((sent / count) * 100) : 0;
-        const emailOk = emailResults.filter(r => r.ok).length;
-        const emailTotal = emailResults.length;
-        const lines = [
-          '┏━━━━━━━━━━━━━━━━━━━┓',
-          '┃  VERTEX REPORT LOG  ┃',
-          '┗━━━━━━━━━━━━━━━━━━━┛',
-          '',
-          'Target: ' + targetNum,
-          'Type: ' + (type === 'group' ? 'Group Ban' : 'Number Ban'),
-          'Nodes: ' + sent + '/' + count + ' (' + rate + '%)',
-          '',
-          'MATRIX EMAIL REPORTS:',
-          'Total Emails Sent: ' + emailOk + '/' + emailTotal,
-          'All User Emails Used: ' + activeUserEmails.length,
-          'All Prompts Used: ' + allPrompts.length,
-          'All WA Addresses: ' + activeWaEmails.length,
-          'Time: ' + new Date().toISOString(),
-          '',
-          '- VERTEX v4.8.3'
-        ];
-        await s.sock.sendMessage(ownerJid, { text: lines.join('\n') });
-        s.banMessageStatus = 'sent';
-        log(banId + ' Summary SENT to ' + ownerJid);
-      } else {
-        s.banMessageStatus = 'failed';
+      if(res.banStatus==='complete'){
+        clearInterval(intv);
+        const sent=res.reports.filter(r=>r.status==='sent').length;
+        const failed=res.reports.filter(r=>r.status==='failed').length;
+        sm.classList.remove('hidden');sm.classList.add('success-flash');
+        sm.innerHTML='<div class="space-y-2"><div class="text-green-400 font-semibold text-sm">SUCCESSFUL</div><div class="flex justify-between"><span class="text-gray-400">Nodes Sent</span><span class="text-white font-bold">'+sent+'/'+reportCount+'</span></div><div class="flex justify-between"><span class="text-gray-400">Failed</span><span class="text-red-400">'+failed+'</span></div>'+(res.banMessageStatus==='sent'?'<div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Summary to you</span><span class="text-green-400">Delivered</span></div>':res.banMessageStatus&&res.banMessageStatus.startsWith('failed')?'<div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Summary to you</span><span class="text-red-400">Failed</span></div>':'')+'</div>';
+        btn.disabled=false;btn.textContent='EXECUTE BAN (Nodes+Emails)';
       }
-    } catch (e) {
-      s.banMessageStatus = 'failed';
-      log(banId + ' Summary FAILED: ' + e.message);
-    }
-
-    s.banStatus = 'complete';
-    reportsRunning[banId] = false;
-    log(banId + ' Ban complete');
-  } catch (e) {
-    const s = sessions.get(banId);
-    if (s) { s.banStatus = 'error'; s.banMessageStatus = 'failed'; }
-    reportsRunning[banId] = false;
-    log('Ban error [' + banId + ']: ' + e.message);
+    },800);
   }
-});
+}
 
 // ========================
-// PURE EMAIL REPORT (NO SESSION REQUIRED)
+// PURE EMAIL REPORT (NO SESSION)
 // ========================
-app.post('/api/email-report', async (req, res) => {
-  const { targetNumber } = req.body;
-  if (!targetNumber) return res.status(400).json({ error: 'Target number required' });
+async function executeEmailOnly(){
+  const targetNumber = document.getElementById('target-number').value.replace(/\D/g,'');
+  if(targetNumber.startsWith('0')) targetNumber = targetNumber.substring(1);
+  if(!targetNumber){ alert('Enter a target number first'); return; }
 
-  const activeUserEmails = db.emails.filter(e => e.status === 'active');
-  const activeWaEmails = db.whatsappEmails.filter(we => we.active).map(we => we.email);
-  const allPrompts = db.prompts;
+  const btn = document.getElementById('btn-email-only');
+  btn.disabled = true;
+  btn.textContent = 'SENDING EMAILS...';
+  const rs = document.getElementById('results-section');
+  const rl = document.getElementById('results-list');
+  const si = document.getElementById('sending-indicator');
+  const sm = document.getElementById('results-summary');
+  rs.classList.remove('hidden');
+  rl.innerHTML = '';
+  sm.classList.add('hidden');
+  si.classList.remove('hidden');
 
-  if (activeUserEmails.length === 0) return res.status(400).json({ error: 'No active sender emails' });
-  if (activeWaEmails.length === 0) return res.status(400).json({ error: 'No active WhatsApp support emails' });
-  if (allPrompts.length === 0) return res.status(400).json({ error: 'No prompts configured' });
-
-  let results = [];
-  let totalSent = 0;
-  let totalFailed = 0;
-
-  for (const userEmailObj of activeUserEmails) {
-    if (!userEmailObj.appPassword) {
-      log('Skipping email ' + userEmailObj.email + ': no app password');
-      continue;
-    }
-    for (const promptTemplate of allPrompts) {
-      const promptText = promptTemplate.replace(/\{number\}/g, targetNumber);
-      const { subject, textBody, htmlBody } = buildEmailBodies(targetNumber, promptText, userEmailObj.email);
-      for (const waEmail of activeWaEmails) {
-        const result = await sendEmailViaSMTP(userEmailObj, waEmail, subject, htmlBody, textBody);
-        results.push({ from: userEmailObj.email, to: waEmail, prompt: promptText.substring(0, 40), ...result });
-        if (result.ok) {
-          totalSent++;
-          log('Email SENT (email-report): ' + userEmailObj.email + ' -> ' + waEmail);
-        } else {
-          totalFailed++;
-          log('Email FAIL (email-report): ' + userEmailObj.email + ' -> ' + waEmail + ' | ' + result.error);
-        }
-        await new Promise(r => setTimeout(r, 500 + Math.floor(Math.random() * 1000)));
-      }
-    }
-  }
-
-  res.json({ totalSent, totalFailed, results });
-});
-
-app.post('/api/group', async (req, res) => {
   try {
-    const s = sessions.get(req.body.id);
-    if (!s || s.status !== 'linked' || !s.sock) return res.status(400).json({ error: 'Not linked' });
-    const code = req.body.link.replace(/\/$/, '').split('/').pop();
-    const info = await s.sock.groupGetInviteInfo(code);
-    res.json({ id: info.id, name: info.subject, members: info.participants?.length || 0 });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete('/api/session/:id', (req, res) => {
-  const rid = req.params.id;
-  const s = sessions.get(rid);
-  if (s) {
-    reportsRunning[rid] = false;
-    try { s.sock?.end(); } catch (e) {}
-    try { fs.rmSync(path.join(DATA_DIR, 'auth_' + rid), { recursive: true, force: true }); } catch (e) {}
-    delete reportsRunning[rid];
-    sessions.delete(rid);
-    log('Deleted ' + rid);
+    const resp = await api('email-report', { targetNumber });
+    si.classList.add('hidden');
+    rl.innerHTML = resp.results.map(r => {
+      const ok = r.ok;
+      return '<div class="email-report-result flex items-center gap-2 px-3 py-1.5 rounded-lg '+(ok?'bg-green-900/30 border border-green-800/50':'bg-red-900/30 border border-red-800/50')+'"><span class="w-2 h-2 rounded-full '+(ok?'bg-green-500':'bg-red-500')+'"></span><span class="text-xs '+(ok?'text-green-400':'text-red-400')+'">'+(ok?'✓':'✗')+' '+r.from+' → '+r.to+'</span><span class="text-xs text-gray-500 ml-auto">'+(r.prompt||'')+'</span></div>';
+    }).join('');
+    sm.classList.remove('hidden');
+    sm.innerHTML = '<div class="space-y-2"><div class="'+(resp.totalFailed===0?'text-green-400':'text-yellow-400')+' font-semibold text-sm">EMAIL REPORT COMPLETE</div><div class="flex justify-between"><span class="text-gray-400">Sent</span><span class="text-white font-bold">'+resp.totalSent+'</span></div><div class="flex justify-between"><span class="text-gray-400">Failed</span><span class="text-red-400">'+resp.totalFailed+'</span></div><div class="flex justify-between mt-2 pt-2 border-t border-dark-600"><span class="text-gray-400">Total Attempts</span><span class="text-white">'+resp.results.length+'</span></div></div>';
+    if(resp.totalFailed>0) sm.classList.add('border-yellow-600/30');
+    else sm.classList.add('border-green-600/30');
+  } catch(e) {
+    si.classList.add('hidden');
+    rl.innerHTML = '<div class="text-red-400 text-sm">Error: '+(e.error||e.message)+'</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'EXECUTE EMAIL REPORT';
   }
-  res.json({ ok: true });
-});
+}
 
 // ========================
-// EMAIL MANAGEMENT ROUTES (updated to handle SMTP fields)
+// MATRIX PREVIEW UPDATE
 // ========================
-app.get('/api/emails', (req, res) => {
-  res.json(db.emails);
-});
-
-app.post('/api/emails', (req, res) => {
-  const { email, appPassword, notes, smtpHost, smtpPort, smtpSecure, smtpUser } = req.body;
-  if (!email || !appPassword) return res.status(400).json({ error: 'Email and app password required' });
-  if (getEmailByAddress(email)) return res.status(400).json({ error: 'Email already exists' });
-  
-  const newEmail = {
-    id: generateEmailId(),
-    email: email.trim().toLowerCase(),
-    appPassword: appPassword.trim(),
-    notes: notes || '',
-    status: 'active',
-    linkedNumbers: [],
-    // SMTP custom fields
-    smtpHost: smtpHost || '',
-    smtpPort: smtpPort ? parseInt(smtpPort) : null,
-    smtpSecure: smtpSecure === true || smtpSecure === 'true',
-    smtpUser: smtpUser || '',
-  };
-  db.emails.push(newEmail);
-  saveDB();
-  res.json(newEmail);
-});
-
-app.put('/api/emails/:id', (req, res) => {
-  const email = getEmailById(req.params.id);
-  if (!email) return res.status(404).json({ error: 'Not found' });
-  if (req.body.appPassword !== undefined) email.appPassword = req.body.appPassword;
-  if (req.body.notes !== undefined) email.notes = req.body.notes;
-  if (req.body.status !== undefined) email.status = req.body.status;
-  if (req.body.linkedNumbers !== undefined) email.linkedNumbers = req.body.linkedNumbers;
-  if (req.body.smtpHost !== undefined) email.smtpHost = req.body.smtpHost;
-  if (req.body.smtpPort !== undefined) email.smtpPort = req.body.smtpPort ? parseInt(req.body.smtpPort) : null;
-  if (req.body.smtpSecure !== undefined) email.smtpSecure = req.body.smtpSecure === true || req.body.smtpSecure === 'true';
-  if (req.body.smtpUser !== undefined) email.smtpUser = req.body.smtpUser;
-  saveDB();
-  res.json(email);
-});
-
-app.delete('/api/emails/:id', (req, res) => {
-  db.emails = db.emails.filter(e => e.id !== req.params.id);
-  db.targets = db.targets.filter(t => t.emailId !== req.params.id);
-  saveDB();
-  res.json({ ok: true });
-});
+function updateMatrixPreview(){
+  const activeEmails=emails.filter(e=>e.status==='active').length;
+  const activePrompts=prompts.length;
+  const activeWa=waEmails.filter(we=>we.active).length;
+  const total=activeEmails*activePrompts*activeWa;
+  document.getElementById('matrix-emails').textContent=activeEmails;
+  document.getElementById('matrix-prompts').textContent=activePrompts;
+  document.getElementById('matrix-wa').textContent=activeWa;
+  document.getElementById('matrix-total').textContent=total+' emails total';
+}
 
 // ========================
-// TARGET / NUMBER ROUTES
+// EMAIL MANAGEMENT (with SMTP custom fields)
 // ========================
-app.get('/api/numbers', (req, res) => {
-  res.json(db.targets);
-});
+async function loadEmails(){
+  try{emails=await apiGet('emails');renderEmails();updateMatrixPreview();}catch(e){console.error('loadEmails error',e)}
+}
+function renderEmails(){
+  const grid=document.getElementById('email-grid');
+  if(!emails.length){grid.innerHTML='<div id="empty-emails" class="col-span-full text-center py-12 text-gray-600 text-sm">No emails added yet. Click "+ Add Email" to start.</div>';return;}
+  grid.innerHTML=emails.map(e=>{
+    const linkedNums=e.linkedNumbers&&e.linkedNumbers.length?e.linkedNumbers.map(n=>'<span class="number-tag inline-flex items-center gap-1 px-2 py-0.5 bg-dark-700 rounded text-xs text-gray-300">'+n+'</span>').join(''):'<span class="text-xs text-gray-600">No linked targets</span>';
+    const statusColor=e.status==='active'?'text-green-400':'text-gray-500';
+    let smtpInfo = '';
+    if(e.smtpHost && e.smtpPort) {
+      smtpInfo = '<div class="text-xs text-gray-500 mt-1">SMTP: '+e.smtpHost+':'+e.smtpPort+' '+(e.smtpSecure?'🔒':'')+'</div>';
+    }
+    return'<div class="email-card bg-dark-800 rounded-xl border border-dark-600 p-4"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full '+(e.status==='active'?'bg-green-500':'bg-gray-600')+'"></span><span class="text-xs '+statusColor+'">'+(e.status==='active'?'Active':'Inactive')+'</span></div><div class="flex gap-1"><button onclick="editEmail(\''+e.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs rounded transition">Edit</button><button onclick="deleteEmail(\''+e.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button></div></div><div class="mb-2"><div class="text-sm font-medium text-white truncate">'+e.email+'</div><div class="text-xs text-gray-500 mt-0.5">App Password: '+maskPassword(e.appPassword)+'</div>'+smtpInfo+'</div><div class="mb-2"><div class="text-xs text-gray-500 mb-1">Linked Targets:</div><div class="flex flex-wrap gap-1">'+linkedNums+'</div></div>'+(e.notes?'<div class="text-xs text-gray-600 italic">'+e.notes+'</div>':'')+'</div>';
+  }).join('');
+}
+function maskPassword(pw){if(!pw)return'—';if(pw.length<=8)return'*'.repeat(pw.length);return pw.substring(0,2)+'*'.repeat(pw.length-4)+pw.substring(pw.length-2);}
 
-app.post('/api/numbers', (req, res) => {
-  const { number, label, emailId } = req.body;
-  if (!number) return res.status(400).json({ error: 'Number required' });
-  
-  const cleanNumber = String(number).replace(/\D/g, '').replace(/^0+/, '');
-  const newTarget = {
-    id: 'tgt_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
-    number: cleanNumber,
-    label: label || '',
-    emailId: emailId || null,
-    email: emailId ? (getEmailById(emailId)?.email || '') : '',
-    createdAt: new Date().toISOString()
-  };
-  db.targets.push(newTarget);
-  saveDB();
-  res.json(newTarget);
-});
-
-app.delete('/api/numbers/:id', (req, res) => {
-  db.targets = db.targets.filter(t => t.id !== req.params.id);
-  saveDB();
-  res.json({ ok: true });
-});
-
-// ========================
-// PROMPT ROUTES
-// ========================
-app.get('/api/prompts', (req, res) => {
-  res.json({ prompts: db.prompts });
-});
-
-app.post('/api/prompts', (req, res) => {
-  if (req.body.prompts && Array.isArray(req.body.prompts)) {
-    db.prompts = req.body.prompts;
-    saveDB();
-    res.json({ prompts: db.prompts });
-  } else {
-    res.status(400).json({ error: 'prompts array required' });
-  }
-});
-
-app.post('/api/prompts/reset', (req, res) => {
-  db.prompts = [...DEFAULT_PROMPTS];
-  saveDB();
-  res.json({ prompts: db.prompts });
-});
-
-// ========================
-// WHATSAPP SUPPORT EMAIL ROUTES
-// ========================
-app.get('/api/whatsapp-emails', (req, res) => {
-  res.json(db.whatsappEmails);
-});
-
-app.post('/api/whatsapp-emails', (req, res) => {
-  const { email, label } = req.body;
-  if (!email || !email.includes('@')) return res.status(400).json({ error: 'Valid email required' });
-  
-  const newWaEmail = {
-    id: 'wem_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
-    email: email.trim().toLowerCase(),
-    label: label || 'Custom',
-    active: true
-  };
-  db.whatsappEmails.push(newWaEmail);
-  saveDB();
-  res.json(newWaEmail);
-});
-
-app.put('/api/whatsapp-emails/:id', (req, res) => {
-  const we = db.whatsappEmails.find(e => e.id === req.params.id);
-  if (!we) return res.status(404).json({ error: 'Not found' });
-  if (req.body.active !== undefined) we.active = req.body.active;
-  if (req.body.label !== undefined) we.label = req.body.label;
-  if (req.body.email !== undefined) we.email = req.body.email;
-  saveDB();
-  res.json(we);
-});
-
-app.delete('/api/whatsapp-emails/:id', (req, res) => {
-  db.whatsappEmails = db.whatsappEmails.filter(e => e.id !== req.params.id);
-  saveDB();
-  res.json({ ok: true });
-});
+function openEmailModal(){
+  document.getElementById('email-modal-title').textContent='Add Email';
+  document.getElementById('email-edit-id').value='';
+  document.getElementById('email-input').value='';
+  document.getElementById('app-password-input').value='';
+  document.getElementById('email-notes-input').value='';
+  document.getElementById('smtp-host-input').value='';
+  document.getElementById('smtp-port-input').value='';
+  document.getElementById('smtp-secure-input').checked=false;
+  document.getElementById('smtp-user-input').value='';
+  document.getElementById('email-modal').classList.add('show');
+}
+function closeEmailModal(){document.getElementById('email-modal').classList.remove('show')}
+async function saveEmail(){
+  const id=document.getElementById('email-edit-id').value;
+  const email=document.getElementById('email-input').value.trim();
+  const appPassword=document.getElementById('app-password-input').value.trim();
+  const notes=document.getElementById('email-notes-input').value.trim();
+  const smtpHost=document.getElementById('smtp-host-input').value.trim();
+  const smtpPort=document.getElementById('smtp-port-input').value.trim();
+  const smtpSecure=document.getElementById('smtp-secure-input').checked;
+  const smtpUser=document.getElementById('smtp-user-input').value.trim();
+  if(!email||!appPassword){alert('Email and App Password required');return}
+  const payload={email,appPassword,notes,smtpHost,smtpPort:smtpPort?parseInt(smtpPort):null,smtpSecure,smtpUser:smtpUser||''};
+  try{
+    if(id){await apiPut('emails/'+id,payload);}
+    else{await api('emails',payload);}
+    closeEmailModal();loadEmails();
+  }catch(e){alert('Error: '+(e.error||e.message))}
+}
+function editEmail(id){
+  const e=emails.find(x=>x.id===id);if(!e)return;
+  document.getElementById('email-modal-title').textContent='Edit Email';
+  document.getElementById('email-edit-id').value=e.id;
+  document.getElementById('email-input').value=e.email;
+  document.getElementById('app-password-input').value=e.appPassword;
+  document.getElementById('email-notes-input').value=e.notes||'';
+  document.getElementById('smtp-host-input').value=e.smtpHost||'';
+  document.getElementById('smtp-port-input').value=e.smtpPort||'';
+  document.getElementById('smtp-secure-input').checked=e.smtpSecure===true;
+  document.getElementById('smtp-user-input').value=e.smtpUser||'';
+  document.getElementById('email-modal').classList.add('show');
+}
+async function deleteEmail(id){
+  if(!confirm('Delete this email and all linked targets?'))return;
+  try{await apiDel('emails/'+id);loadEmails();loadNumbers();}catch(e){alert('Error: '+(e.error||e.message))}
+}
 
 // ========================
-// START SERVER
+// TARGETS / NUMBER LINKING (read-only)
 // ========================
-app.listen(PORT, () => {
-  log('VERTEX Panel v4.8.3 started on port ' + PORT);
-});
+async function loadNumbers(){
+  try{numberLinks=await apiGet('numbers');renderNumbers();}catch(e){console.error('loadNumbers error',e)}
+}
+function renderNumbers(){
+  const grid=document.getElementById('targets-grid');
+  if(!numberLinks.length){grid.innerHTML='<div id="empty-targets" class="col-span-full text-center py-12 text-gray-600 text-sm">No targets saved.</div>';return;}
+  grid.innerHTML=numberLinks.map(n=>{
+    return'<div class="bg-dark-800 rounded-xl border border-dark-600 p-4">'+
+      '<div class="flex items-center justify-between mb-3"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-full bg-gold-600/20 flex items-center justify-center text-gold-500 text-xs font-bold">T</div><span class="text-xs text-gray-500">Saved Target</span></div><button onclick="deleteTarget(\''+n.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button></div>'+
+      '<div class="mb-2"><div class="text-lg font-bold text-white">+'+n.number+'</div><div class="text-xs text-cyan-400">'+n.email+'</div></div>'+
+      (n.label?'<div class="text-xs text-gray-500 mb-2">Label: '+n.label+'</div>':'')+
+      '</div>';
+  }).join('');
+}
+async function deleteTarget(id){
+  if(!confirm('Delete this target?'))return;
+  try{await apiDel('numbers/'+id);loadNumbers();}catch(e){alert('Error: '+(e.error||e.message))}
+}
+
+// ========================
+// PROMPTS MANAGEMENT
+// ========================
+async function loadPrompts(){
+  try{
+    const res=await apiGet('prompts');
+    prompts=res.prompts||[];
+    renderPrompts();
+    updateMatrixPreview();
+  }catch(e){console.error('loadPrompts error',e)}
+}
+function renderPrompts(){
+  const list=document.getElementById('prompts-list');
+  if(!prompts.length){list.innerHTML='<div id="empty-prompts" class="text-center py-12 text-gray-600 text-sm">No prompts configured.</div>';return;}
+  list.innerHTML=prompts.map((p,i)=>{
+    const hasPlaceholder=p.includes('{number}');
+    return'<div class="prompt-item flex items-start gap-3 px-4 py-3 bg-dark-800 rounded-lg border border-dark-600">'+
+      '<div class="flex-shrink-0 w-6 h-6 rounded-full bg-cyan-600 flex items-center justify-center text-xs text-white font-bold">'+(i+1)+'</div>'+
+      '<div class="flex-1"><div class="text-sm text-white">'+escapeHtml(p)+'</div>'+(hasPlaceholder?'<div class="text-xs text-cyan-400 mt-1">✓ Has {number} placeholder</div>':'<div class="text-xs text-yellow-500 mt-1">⚠ No {number} placeholder — number will NOT be inserted</div>')+'</div>'+
+      '<div class="flex flex-col gap-1"><button onclick="editPrompt('+i+')" class="px-2 py-1 bg-dark-600 hover:bg-dark-700 text-gray-400 text-xs rounded transition">Edit</button><button onclick="deletePrompt('+i+')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button></div>'+
+      '</div>';
+  }).join('');
+}
+function escapeHtml(t){const d=document.createElement('div');d.textContent=t;return d.innerHTML;}
+function editPrompt(idx){
+  const newText=prompt('Edit prompt #'+(idx+1)+':', prompts[idx]||'');
+  if(newText===null||!newText.trim())return;
+  prompts[idx]=newText.trim();
+  renderPrompts();
+}
+function deletePrompt(idx){
+  if(!confirm('Delete prompt #'+(idx+1)+'?'))return;
+  prompts.splice(idx,1);
+  renderPrompts();
+}
+async function savePrompts(){
+  try{await api('prompts',{prompts});alert('Prompts saved! ('+prompts.length+' total)');loadPrompts();}catch(e){alert('Error: '+(e.error||e.message))}
+}
+async function resetPrompts(){
+  if(!confirm('Reset to 10 default high-power prompts?'))return;
+  try{await api('prompts/reset',{});loadPrompts();}catch(e){alert('Error: '+(e.error||e.message))}
+}
+
+// ========================
+// WHATSAPP SUPPORT EMAILS
+// ========================
+async function loadWaEmails(){
+  try{waEmails=await apiGet('whatsapp-emails');renderWaEmails();updateMatrixPreview();}catch(e){console.error('loadWaEmails error',e)}
+}
+function renderWaEmails(){
+  const list=document.getElementById('wa-emails-list');
+  if(!waEmails.length){list.innerHTML='<div id="empty-waemails" class="text-center py-12 text-gray-600 text-sm">No WhatsApp emails configured.</div>';return;}
+  list.innerHTML=waEmails.map(we=>{
+    return'<div class="wa-email-row flex items-center justify-between px-4 py-3 bg-dark-800 rounded-lg border border-dark-600">'+
+      '<div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full '+(we.active?'bg-purple-600/20':'bg-dark-600')+' flex items-center justify-center text-purple-500 text-xs font-bold">W</div><div><div class="text-sm text-white font-medium">'+we.email+'</div><div class="text-xs text-gray-500">'+we.label+'</div></div></div>'+
+      '<div class="flex items-center gap-2">'+
+      '<label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" '+(we.active?'checked':'')+' onchange="toggleWaEmail(\''+we.id+'\',this.checked)" class="accent-purple-600 w-4 h-4"><span class="text-xs text-gray-400">'+(we.active?'Active':'Inactive')+'</span></label>'+
+      '<button onclick="deleteWaEmail(\''+we.id+'\')" class="px-2 py-1 bg-dark-600 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-xs rounded transition">Del</button>'+
+      '</div>'+
+      '</div>';
+  }).join('');
+}
+async function toggleWaEmail(id, active){
+  try{await apiPut('whatsapp-emails/'+id,{active});loadWaEmails();}catch(e){console.error(e)}
+}
+async function deleteWaEmail(id){
+  if(!confirm('Remove this WhatsApp support email?'))return;
+  try{await apiDel('whatsapp-emails/'+id);loadWaEmails();}catch(e){alert('Error: '+(e.error||e.message))}
+}
+async function addWaEmail(){
+  const email=prompt('WhatsApp Support Email:');
+  if(!email||!email.includes('@')){alert('Valid email required');return}
+  const label=prompt('Label (e.g. Abuse Team):')||'Custom';
+  try{await api('whatsapp-emails',{email,label});loadWaEmails();}catch(e){alert('Error: '+(e.error||e.message))}
+}
+
+// ========================
+// INIT
+// ========================
+loadExistingSessions();
+loadPrompts();
+loadWaEmails();
+</script>
+</body>
+</html>
