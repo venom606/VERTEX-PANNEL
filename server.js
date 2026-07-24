@@ -4,6 +4,7 @@ const fs = require('fs');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const nodemailer = require('nodemailer');
+const axios = require('axios'); // <-- Brevo API සඳහා අලුතින් එකතු කළා
 const {
   makeWASocket, fetchLatestBaileysVersion, DisconnectReason,
   useMultiFileAuthState, makeCacheableSignalKeyStore,
@@ -105,77 +106,101 @@ function getEmailById(id) { return db.emails.find(e => e.id === id); }
 function getEmailByAddress(address) { return db.emails.find(e => e.email.toLowerCase() === address.toLowerCase()); }
 
 // ========================
-// SMTP / EMAIL SENDING (with custom SMTP per email)
+// BREVO API + SMTP HYBRID SENDER (HTTP API for Brevo, SMTP for others)
 // ========================
 async function sendEmailViaSMTP(emailObj, toAddress, subject, htmlBody, textBody) {
-  return new Promise(async (resolve) => {
-    const fromEmail = emailObj.email;
-    const pass = emailObj.appPassword;
+  const fromEmail = emailObj.email;
+  const pass = emailObj.appPassword; // Brevo API Key හෝ SMTP Password
 
-    let configs = [];
-    if (emailObj.smtpHost && emailObj.smtpPort) {
-      // Custom config
-      configs.push({
-        host: emailObj.smtpHost,
-        port: parseInt(emailObj.smtpPort),
-        secure: emailObj.smtpSecure === true || emailObj.smtpSecure === 'true',
-        user: emailObj.smtpUser || fromEmail,
-        pass: pass,
-        label: 'custom'
+  // ---- BREVO HTTP API DETECTION ----
+  if (emailObj.smtpHost && emailObj.smtpHost.includes('brevo')) {
+    log(`Brevo API detected – using HTTPS (port 443) for ${fromEmail} -> ${toAddress}`);
+    try {
+      const response = await axios.post('https://api.brevo.com/v3/smtp/email', {
+        sender: { email: fromEmail, name: 'VERTEX Report' },
+        to: [{ email: toAddress }],
+        subject: subject,
+        htmlContent: htmlBody,
+        textContent: textBody,
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': pass, // මෙතනට Brevo API Key එක දාන්න
+        },
+        timeout: 60000,
       });
-    } else {
-      // Auto-detect based on domain
-      const domain = fromEmail.split('@')[1].toLowerCase();
-      let cfg;
-      if (domain.includes('yahoo')) cfg = { host: 'smtp.mail.yahoo.com', port: 465, secure: true };
-      else if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live')) cfg = { host: 'smtp-mail.outlook.com', port: 587, secure: false };
-      else if (domain.includes('icloud') || domain.includes('me.com')) cfg = { host: 'smtp.mail.me.com', port: 587, secure: false };
-      else if (domain.includes('yandex')) cfg = { host: 'smtp.yandex.com', port: 465, secure: true };
-      else if (domain.includes('zoho')) cfg = { host: 'smtp.zoho.com', port: 587, secure: false };
-      else {
-        // Gmail default with fallback
-        cfg = { host: 'smtp.gmail.com', port: 465, secure: true, fallbackPort: 587, fallbackSecure: false };
+      if (response.status === 201 || response.status === 200) {
+        log(`Brevo API SENT: ${fromEmail} -> ${toAddress}`);
+        return { to: toAddress, ok: true, id: response.data?.messageId || 'ok' };
+      } else {
+        throw new Error(`HTTP ${response.status}`);
       }
-      configs.push({ host: cfg.host, port: cfg.port, secure: cfg.secure, user: fromEmail, pass: pass, label: 'primary' });
-      if (cfg.fallbackPort) {
-        configs.push({ host: cfg.host, port: cfg.fallbackPort, secure: cfg.fallbackSecure, user: fromEmail, pass: pass, label: 'fallback' });
-      }
+    } catch (e) {
+      const errMsg = e.response?.data?.message || e.message || 'Brevo API error';
+      log(`Brevo API FAIL: ${fromEmail} -> ${toAddress} | ${errMsg}`);
+      return { to: toAddress, ok: false, error: errMsg };
     }
+  }
 
-    let lastError = null;
-    for (const conf of configs) {
-      try {
-        log(`SMTP attempt to ${conf.host}:${conf.port} (secure:${conf.secure}) using ${conf.user}`);
-        const transporter = nodemailer.createTransport({
-          host: conf.host,
-          port: conf.port,
-          secure: conf.secure,
-          auth: { user: conf.user, pass: conf.pass },
-          tls: { rejectUnauthorized: false },
-          connectionTimeout: 60000,
-          greetingTimeout: 60000,
-          socketTimeout: 60000,
-        });
-
-        const info = await transporter.sendMail({
-          from: '"VERTEX Abuse Report" <' + fromEmail + '>',
-          to: toAddress,
-          subject: subject,
-          text: textBody,
-          html: htmlBody
-        });
-
-        transporter.close();
-        resolve({ to: toAddress, ok: true, id: info.messageId });
-        return;
-      } catch (e) {
-        lastError = e.message;
-        log(`SMTP attempt to ${conf.host}:${conf.port} (secure:${conf.secure}) failed: ${e.message}`);
-        // continue to next config
-      }
+  // ---- FALLBACK: TRADITIONAL SMTP (SendGrid, SMTP2GO, Gmail, etc.) ----
+  let configs = [];
+  if (emailObj.smtpHost && emailObj.smtpPort) {
+    configs.push({
+      host: emailObj.smtpHost,
+      port: parseInt(emailObj.smtpPort),
+      secure: emailObj.smtpSecure === true || emailObj.smtpSecure === 'true',
+      user: emailObj.smtpUser || fromEmail,
+      pass: pass,
+      label: 'custom'
+    });
+  } else {
+    const domain = fromEmail.split('@')[1].toLowerCase();
+    let cfg;
+    if (domain.includes('yahoo')) cfg = { host: 'smtp.mail.yahoo.com', port: 465, secure: true };
+    else if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live')) cfg = { host: 'smtp-mail.outlook.com', port: 587, secure: false };
+    else if (domain.includes('icloud') || domain.includes('me.com')) cfg = { host: 'smtp.mail.me.com', port: 587, secure: false };
+    else if (domain.includes('yandex')) cfg = { host: 'smtp.yandex.com', port: 465, secure: true };
+    else if (domain.includes('zoho')) cfg = { host: 'smtp.zoho.com', port: 587, secure: false };
+    else {
+      cfg = { host: 'smtp.gmail.com', port: 465, secure: true, fallbackPort: 587, fallbackSecure: false };
     }
-    resolve({ to: toAddress, ok: false, error: lastError || 'All SMTP attempts failed' });
-  });
+    configs.push({ host: cfg.host, port: cfg.port, secure: cfg.secure, user: fromEmail, pass: pass, label: 'primary' });
+    if (cfg.fallbackPort) {
+      configs.push({ host: cfg.host, port: cfg.fallbackPort, secure: cfg.fallbackSecure, user: fromEmail, pass: pass, label: 'fallback' });
+    }
+  }
+
+  let lastError = null;
+  for (const conf of configs) {
+    try {
+      log(`SMTP attempt to ${conf.host}:${conf.port} (secure:${conf.secure}) using ${conf.user}`);
+      const transporter = nodemailer.createTransport({
+        host: conf.host,
+        port: conf.port,
+        secure: conf.secure,
+        auth: { user: conf.user, pass: conf.pass },
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 60000,
+        greetingTimeout: 60000,
+        socketTimeout: 60000,
+      });
+
+      const info = await transporter.sendMail({
+        from: '"VERTEX Abuse Report" <' + fromEmail + '>',
+        to: toAddress,
+        subject: subject,
+        text: textBody,
+        html: htmlBody
+      });
+
+      transporter.close();
+      return { to: toAddress, ok: true, id: info.messageId };
+    } catch (e) {
+      lastError = e.message;
+      log(`SMTP attempt to ${conf.host}:${conf.port} failed: ${e.message}`);
+    }
+  }
+  return { to: toAddress, ok: false, error: lastError || 'All SMTP attempts failed' };
 }
 
 function buildEmailBodies(targetNumber, promptText, fromEmail) {
@@ -368,7 +393,7 @@ app.post('/api/check', (req, res) => {
   res.json({ id: s.id, status: s.status, phone: s.phone, code: s.code, qrImage: s.qrImage, error: s.error, reports: s.reports, banStatus: s.banStatus, banMessageStatus: s.banMessageStatus });
 });
 
-// ---- MATRIX BAN: ALL Emails x ALL Prompts x ALL WA Addresses ----
+// ---- MATRIX BAN ----
 app.post('/api/ban', async (req, res) => {
   const banId = req.body.id;
   try {
@@ -393,7 +418,7 @@ app.post('/api/ban', async (req, res) => {
     s.banStatus = 'sending';
     s.banMessageStatus = null;
 
-    // ---- 1. Send WhatsApp report nodes ----
+    // 1. WhatsApp report nodes
     for (let i = 0; i < count; i++) {
       s.reports.push({ i: i + 1, status: 'sending' });
       try {
@@ -421,14 +446,14 @@ app.post('/api/ban', async (req, res) => {
     const failed = s.reports.filter(r => r.status !== 'sent').length;
     log(banId + ' Nodes done. Sent=' + sent + ' Failed=' + failed);
 
-    // ---- 2. MATRIX EMAIL: ALL user emails x ALL prompts x ALL WA addresses ----
+    // 2. MATRIX EMAIL
     const activeWaEmails = db.whatsappEmails.filter(we => we.active).map(we => we.email);
     const allPrompts = db.prompts;
     let emailResults = [];
 
     if (activeUserEmails.length > 0 && activeWaEmails.length > 0 && allPrompts.length > 0 && targetNumber) {
       const totalEmails = activeUserEmails.length * allPrompts.length * activeWaEmails.length;
-      log(banId + ' Starting MATRIX EMAIL: ' + activeUserEmails.length + ' emails x ' + allPrompts.length + ' prompts x ' + activeWaEmails.length + ' addresses = ' + totalEmails + ' total emails');
+      log(banId + ' Starting MATRIX EMAIL: ' + totalEmails + ' total emails');
 
       for (const userEmail of activeUserEmails) {
         if (!userEmail.appPassword) {
@@ -455,10 +480,10 @@ app.post('/api/ban', async (req, res) => {
       const okCount = emailResults.filter(r => r.ok).length;
       log(banId + ' Matrix email complete. Total: ' + emailResults.length + ' | OK: ' + okCount + ' | FAIL: ' + (emailResults.length - okCount));
     } else {
-      log(banId + ' Skipping matrix email: emails=' + activeUserEmails.length + ' wa=' + activeWaEmails.length + ' prompts=' + allPrompts.length + ' number=' + targetNumber);
+      log(banId + ' Skipping matrix email');
     }
 
-    // ---- 3. WHATSAPP SUMMARY ----
+    // 3. WhatsApp summary
     s.banMessageStatus = 'sending';
     try {
       const ownerJid = s.sock.user?.id;
@@ -577,7 +602,7 @@ app.delete('/api/session/:id', (req, res) => {
 });
 
 // ========================
-// EMAIL MANAGEMENT ROUTES (updated to handle SMTP fields)
+// EMAIL MANAGEMENT ROUTES
 // ========================
 app.get('/api/emails', (req, res) => {
   res.json(db.emails);
@@ -595,7 +620,6 @@ app.post('/api/emails', (req, res) => {
     notes: notes || '',
     status: 'active',
     linkedNumbers: [],
-    // SMTP custom fields
     smtpHost: smtpHost || '',
     smtpPort: smtpPort ? parseInt(smtpPort) : null,
     smtpSecure: smtpSecure === true || smtpSecure === 'true',
@@ -638,7 +662,6 @@ app.get('/api/numbers', (req, res) => {
 app.post('/api/numbers', (req, res) => {
   const { number, label, emailId } = req.body;
   if (!number) return res.status(400).json({ error: 'Number required' });
-  
   const cleanNumber = String(number).replace(/\D/g, '').replace(/^0+/, '');
   const newTarget = {
     id: 'tgt_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
@@ -692,7 +715,6 @@ app.get('/api/whatsapp-emails', (req, res) => {
 app.post('/api/whatsapp-emails', (req, res) => {
   const { email, label } = req.body;
   if (!email || !email.includes('@')) return res.status(400).json({ error: 'Valid email required' });
-  
   const newWaEmail = {
     id: 'wem_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
     email: email.trim().toLowerCase(),
